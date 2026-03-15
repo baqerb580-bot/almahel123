@@ -1,0 +1,39 @@
+# Render Configuration for Full-Stack Deployment
+services:
+  # Backend Service
+  - type: web
+    name: management-system-backend
+    env: python
+    region: oregon
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn server:app --host 0.0.0.0 --port $PORT
+    rootDir: backend
+    envVars:
+      - key: MONGO_URL
+        sync: false
+      - key: DB_NAME
+        value: management_system
+      - key: JWT_SECRET
+        generateValue: true
+      - key: PYTHON_VERSION
+        value: 3.11.0
+
+  # Frontend Service
+  - type: web
+    name: management-system-frontend
+    env: static
+    region: oregon
+    buildCommand: cd frontend && yarn install && yarn build
+    staticPublishPath: frontend/build
+    envVars:
+      - key: REACT_APP_BACKEND_URL
+        fromService:
+          type: web
+          name: management-system-backend
+          property: url
+
+databases:
+  # MongoDB Database (if using Render's MongoDB)
+  - name: management-system-db
+    region: oregon
+    plan: starter

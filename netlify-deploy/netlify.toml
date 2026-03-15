@@ -1,0 +1,68 @@
+# Netlify Build Configuration
+[build]
+  # No build command needed - project is pre-built
+  command = ""
+  # Publish directory is the root of this folder
+  publish = "."
+  # No functions needed
+  functions = ""
+
+# Build Environment
+[build.environment]
+  NODE_VERSION = "18"
+
+# Security Headers Configuration
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    # Security Headers
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    X-XSS-Protection = "1; mode=block"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "camera=(), microphone=(), geolocation=(), interest-cohort=()"
+    
+    # Content Security Policy - Relaxed for proper app functionality
+    Content-Security-Policy = '''
+      default-src 'self';
+      script-src 'self' 'unsafe-inline' 'unsafe-eval' https://fonts.googleapis.com https://assets.emergent.sh https://us.i.posthog.com;
+      style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
+      font-src 'self' https://fonts.gstatic.com;
+      img-src 'self' data: https:;
+      connect-src 'self' https: wss:;
+      frame-ancestors 'none';
+      base-uri 'self';
+      form-action 'self';
+    '''
+    
+    # HSTS (HTTP Strict Transport Security)
+    Strict-Transport-Security = "max-age=31536000; includeSubDomains; preload"
+    
+    # Cache Control
+    Cache-Control = "public, max-age=3600, must-revalidate"
+
+# Cache static assets
+[[headers]]
+  for = "/static/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+# Cache assets folder (if exists)
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+# Don't cache HTML
+[[headers]]
+  for = "/*.html"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+# Redirect rules
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+  force = false
