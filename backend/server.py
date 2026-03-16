@@ -481,6 +481,50 @@ async def delete_user(user_id: str, current_user: dict = Depends(get_current_use
     await db.users.delete_one({"id": user_id, "system": current_user["system"]})
     return {"message": "تم حذف المستخدم بنجاح"}
 
+@api_router.put("/users/{user_id}")
+async def update_user(user_id: str, user_data: dict, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="الصلاحية للمدير فقط")
+    
+    # التحقق من وجود المستخدم
+    existing_user = await db.users.find_one({"id": user_id, "system": current_user["system"]})
+    if not existing_user:
+        raise HTTPException(status_code=404, detail="المستخدم غير موجود")
+    
+    # بناء التحديث
+    update_fields = {}
+    
+    if "username" in user_data and user_data["username"]:
+        # التحقق من عدم وجود اسم مستخدم مكرر
+        existing = await db.users.find_one({
+            "username": user_data["username"], 
+            "id": {"$ne": user_id},
+            "system": current_user["system"]
+        })
+        if existing:
+            raise HTTPException(status_code=400, detail="اسم المستخدم موجود مسبقاً")
+        update_fields["username"] = user_data["username"]
+    
+    if "name" in user_data and user_data["name"]:
+        update_fields["name"] = user_data["name"]
+    
+    if "password" in user_data and user_data["password"]:
+        update_fields["password"] = pwd_context.hash(user_data["password"])
+    
+    if "permissions" in user_data:
+        update_fields["permissions"] = user_data["permissions"]
+    
+    if "telegram_chat_id" in user_data:
+        update_fields["telegram_chat_id"] = user_data["telegram_chat_id"]
+    
+    if update_fields:
+        await db.users.update_one(
+            {"id": user_id, "system": current_user["system"]},
+            {"$set": update_fields}
+        )
+    
+    return {"message": "تم تحديث المستخدم بنجاح"}
+
 # ============== TASKS SYSTEM ENDPOINTS ==============
 
 @api_router.get("/tasks")
@@ -771,14 +815,10 @@ async def create_debt(debt_data: DebtCreate, current_user: dict = Depends(get_cu
     
     await db.debts.insert_one(debt_doc)
     
-    # إرسال إشعار للمدير
-    admins = await db.users.find({"system": "debts", "role": "admin"}).to_list(100)
-    for admin in admins:
-        if admin.get("telegram_chat_id"):
-            # إرسال تنبيه إذا كان لديه ديون سابقة
-            if existing_debts:
-                total_existing = sum(d["remaining_amount"] for d in existing_debts)
-                message = f"""
+    # إنشاء رسالة الإشعار
+    if existing_debts:
+        total_existing = sum(d["remaining_amount"] for d in existing_debts)
+        notification_message = f"""
 ⚠️ <b>تنبيه: زبون عليه ديون سابقة!</b>
 
 👤 <b>الزبون:</b> {debt_data.customer_name}
@@ -787,9 +827,9 @@ async def create_debt(debt_data: DebtCreate, current_user: dict = Depends(get_cu
 💰 <b>الديون السابقة:</b> {total_existing:,.0f} دينار
 💵 <b>الدين الجديد:</b> {remaining:,.0f} دينار
 📊 <b>المجموع الكلي:</b> {total_existing + remaining:,.0f} دينار
-                """
-            else:
-                message = f"""
+        """
+    else:
+        notification_message = f"""
 📝 <b>تم إضافة دين جديد</b>
 
 👤 <b>الزبون:</b> {debt_data.customer_name}
@@ -801,9 +841,17 @@ async def create_debt(debt_data: DebtCreate, current_user: dict = Depends(get_cu
 ⚠️ <b>المبلغ المتبقي:</b> {remaining:,.0f} دينار
 
 📅 <b>تاريخ الاستحقاق:</b> {due_date_str}
-                """
-            await send_telegram_message(admin["telegram_chat_id"], message)
-        await send_telegram_message(current_user["telegram_chat_id"], message, debt_id=debt_id)
+        """
+    
+    # إرسال إشعار للمدراء
+    admins = await db.users.find({"system": "debts", "role": "admin"}).to_list(100)
+    for admin in admins:
+        if admin.get("telegram_chat_id"):
+            await send_telegram_message(admin["telegram_chat_id"], notification_message)
+    
+    # إرسال إشعار للمستخدم الحالي إذا كان لديه Telegram
+    if current_user.get("telegram_chat_id"):
+        await send_telegram_message(current_user["telegram_chat_id"], notification_message, debt_id=debt_id)
     
     # إرسال إشعار للزبون إذا كان لديه Telegram
     if debt_data.customer_telegram_id:

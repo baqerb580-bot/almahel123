@@ -62,6 +62,9 @@ const DebtsSystemFinal = ({ user, onLogout }) => {
     telegram_chat_id: user.telegram_chat_id || ""
   });
 
+  const [editingEmployee, setEditingEmployee] = useState(null);
+  const [showEditEmployee, setShowEditEmployee] = useState(false);
+
   const getAuthHeaders = () => ({
     headers: { Authorization: `Bearer ${localStorage.getItem("token")}` }
   });
@@ -388,6 +391,44 @@ const DebtsSystemFinal = ({ user, onLogout }) => {
     }
   };
 
+  const handleEditEmployee = (employee) => {
+    setEditingEmployee({
+      id: employee.id,
+      username: employee.username,
+      name: employee.name,
+      password: "",
+      permissions: employee.permissions || [],
+      telegram_chat_id: employee.telegram_chat_id || ""
+    });
+    setShowEditEmployee(true);
+  };
+
+  const handleUpdateEmployee = async () => {
+    if (!editingEmployee) return;
+    
+    try {
+      const updateData = {
+        username: editingEmployee.username,
+        name: editingEmployee.name,
+        permissions: editingEmployee.permissions,
+        telegram_chat_id: editingEmployee.telegram_chat_id
+      };
+      
+      // إضافة كلمة المرور فقط إذا تم إدخالها
+      if (editingEmployee.password && editingEmployee.password.trim()) {
+        updateData.password = editingEmployee.password;
+      }
+      
+      await axios.put(`${API}/users/${editingEmployee.id}`, updateData, getAuthHeaders());
+      toast.success("✓ تم تعديل الموظف بنجاح");
+      setShowEditEmployee(false);
+      setEditingEmployee(null);
+      fetchData();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "فشل تعديل الموظف");
+    }
+  };
+
   const handleChangePassword = async () => {
     if (!settings.old_password || !settings.new_password) {
       toast.error("يرجى ملء جميع الحقول");
@@ -513,53 +554,61 @@ const DebtsSystemFinal = ({ user, onLogout }) => {
         <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
           <div 
             onClick={() => setFilterStatus('all')}
-            className="bg-white/95 backdrop-blur-md rounded-2xl p-6 shadow-2xl hover:scale-105 transition-transform cursor-pointer"
+            className="bg-white/95 backdrop-blur-md rounded-2xl p-6 shadow-2xl hover:scale-105 transition-transform cursor-pointer border-2 border-purple-200 hover:border-purple-400"
           >
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-gray-600 text-sm mb-1">إجمالي الديون</p>
                 <p className="text-3xl font-bold text-purple-600">{stats.total_debts}</p>
               </div>
-              <Users size={40} className="text-purple-400" />
+              <div className="bg-purple-100 p-3 rounded-full">
+                <Users size={36} className="text-purple-600" />
+              </div>
             </div>
           </div>
 
           <div 
             onClick={() => setFilterStatus('overdue')}
-            className="bg-white/95 backdrop-blur-md rounded-2xl p-6 shadow-2xl hover:scale-105 transition-transform cursor-pointer"
+            className="bg-white/95 backdrop-blur-md rounded-2xl p-6 shadow-2xl hover:scale-105 transition-transform cursor-pointer border-2 border-red-200 hover:border-red-400"
           >
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-gray-600 text-sm mb-1">المتأخرة</p>
                 <p className="text-3xl font-bold text-red-600">{stats.overdue_debts}</p>
               </div>
-              <AlertCircle size={40} className="text-red-400" />
+              <div className="bg-red-100 p-3 rounded-full">
+                <AlertCircle size={36} className="text-red-600" />
+              </div>
             </div>
           </div>
 
           <div 
             onClick={() => setFilterStatus('active')}
-            className="bg-white/95 backdrop-blur-md rounded-2xl p-6 shadow-2xl hover:scale-105 transition-transform cursor-pointer"
+            className="bg-white/95 backdrop-blur-md rounded-2xl p-6 shadow-2xl hover:scale-105 transition-transform cursor-pointer border-2 border-orange-200 hover:border-orange-400"
           >
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-gray-600 text-sm mb-1">المبلغ المتبقي</p>
                 <p className="text-2xl font-bold text-orange-600">{stats.total_remaining?.toLocaleString()} د.ع</p>
               </div>
-              <DollarSign size={40} className="text-orange-400" />
+              <div className="bg-orange-100 p-3 rounded-full">
+                <DollarSign size={36} className="text-orange-600" />
+              </div>
             </div>
           </div>
 
           <div 
             onClick={() => setFilterStatus('paid')}
-            className="bg-white/95 backdrop-blur-md rounded-2xl p-6 shadow-2xl hover:scale-105 transition-transform cursor-pointer"
+            className="bg-white/95 backdrop-blur-md rounded-2xl p-6 shadow-2xl hover:scale-105 transition-transform cursor-pointer border-2 border-green-200 hover:border-green-400"
           >
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-gray-600 text-sm mb-1">المسدد</p>
                 <p className="text-2xl font-bold text-green-600">{stats.total_paid?.toLocaleString()} د.ع</p>
               </div>
-              <CheckCircle size={40} className="text-green-400" />
+              <div className="bg-green-100 p-3 rounded-full">
+                <CheckCircle size={36} className="text-green-600" />
+              </div>
             </div>
           </div>
         </div>
@@ -1145,13 +1194,22 @@ const DebtsSystemFinal = ({ user, onLogout }) => {
                       <h3 className="text-xl font-bold text-gray-800">{employee.name}</h3>
                       <p className="text-gray-600">@{employee.username}</p>
                     </div>
-                    <button
-                      onClick={() => handleDeleteEmployee(employee.id)}
-                      className="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 transition-all flex items-center gap-2"
-                    >
-                      <Trash2 size={16} />
-                      حذف
-                    </button>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handleEditEmployee(employee)}
+                        className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition-all flex items-center gap-2"
+                      >
+                        <Edit size={16} />
+                        تعديل
+                      </button>
+                      <button
+                        onClick={() => handleDeleteEmployee(employee.id)}
+                        className="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 transition-all flex items-center gap-2"
+                      >
+                        <Trash2 size={16} />
+                        حذف
+                      </button>
+                    </div>
                   </div>
                   
                   <div className="mt-3">
@@ -1180,6 +1238,106 @@ const DebtsSystemFinal = ({ user, onLogout }) => {
                   <p className="text-sm mt-2">قم بإضافة موظف جديد من الإعدادات</p>
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Employee Modal */}
+      {showEditEmployee && editingEmployee && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto p-8">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-2xl font-bold text-blue-600">✏️ تعديل الموظف</h2>
+              <button 
+                onClick={() => { setShowEditEmployee(false); setEditingEmployee(null); }} 
+                className="text-gray-500 hover:text-gray-700 text-2xl"
+              >
+                ✕
+              </button>
+            </div>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-2">اسم الموظف</label>
+                <input
+                  type="text"
+                  value={editingEmployee.name}
+                  onChange={(e) => setEditingEmployee({...editingEmployee, name: e.target.value})}
+                  className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-blue-500 outline-none"
+                  placeholder="الاسم الكامل"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-2">اسم المستخدم</label>
+                <input
+                  type="text"
+                  value={editingEmployee.username}
+                  onChange={(e) => setEditingEmployee({...editingEmployee, username: e.target.value})}
+                  className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-blue-500 outline-none"
+                  placeholder="اسم المستخدم"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-2">كلمة المرور الجديدة (اختياري)</label>
+                <input
+                  type="password"
+                  value={editingEmployee.password}
+                  onChange={(e) => setEditingEmployee({...editingEmployee, password: e.target.value})}
+                  className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-blue-500 outline-none"
+                  placeholder="اتركه فارغاً للإبقاء على كلمة المرور الحالية"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-2">معرف تيليجرام (اختياري)</label>
+                <input
+                  type="text"
+                  value={editingEmployee.telegram_chat_id}
+                  onChange={(e) => setEditingEmployee({...editingEmployee, telegram_chat_id: e.target.value})}
+                  className="w-full border-2 border-gray-200 rounded-lg p-3 focus:border-blue-500 outline-none"
+                  placeholder="معرف تيليجرام"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-2">الصلاحيات</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {PERMISSIONS.map(perm => (
+                    <label key={perm.id} className="flex items-center gap-2 p-2 bg-gray-50 rounded-lg cursor-pointer hover:bg-gray-100">
+                      <input
+                        type="checkbox"
+                        checked={editingEmployee.permissions.includes(perm.id)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setEditingEmployee({
+                              ...editingEmployee, 
+                              permissions: [...editingEmployee.permissions, perm.id]
+                            });
+                          } else {
+                            setEditingEmployee({
+                              ...editingEmployee, 
+                              permissions: editingEmployee.permissions.filter(p => p !== perm.id)
+                            });
+                          }
+                        }}
+                        className="w-4 h-4 text-blue-600"
+                      />
+                      <span className="text-sm">{perm.name}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+              
+              <button
+                onClick={handleUpdateEmployee}
+                className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold hover:bg-blue-700 transition-all flex items-center justify-center gap-2"
+              >
+                <Edit size={18} />
+                حفظ التعديلات
+              </button>
             </div>
           </div>
         </div>
@@ -1337,6 +1495,18 @@ const DebtsSystemFinal = ({ user, onLogout }) => {
           </div>
         </div>
       )}
+
+      {/* حقوق المبرمج */}
+      <footer className="fixed bottom-0 left-0 right-0 bg-gradient-to-r from-purple-600 to-indigo-600 text-white py-3 text-center shadow-lg z-40">
+        <div className="flex items-center justify-center gap-2">
+          <span className="text-sm">تطوير وبرمجة: المهندس أمير بهاء الدين</span>
+          <span className="text-purple-200">|</span>
+          <a href="tel:07723042577" className="text-sm hover:text-purple-200 transition-all flex items-center gap-1">
+            <MessageCircle size={14} />
+            07723042577
+          </a>
+        </div>
+      </footer>
     </div>
   );
 };

@@ -289,15 +289,15 @@ const PhoneRepairSystemFull = ({ user, onLogout }) => {
     }
     
     // الرسالة الجاهزة
-    const message = `مرحباً ${debt.customer_name}،
+    const message = `مرحباً ${debt.customer_name},
 
 🔔 *تذكير بدين صيانة الهاتف*
 
 📱 *الجهاز:* ${debt.phone_model}
 🔧 *العطل:* ${debt.issue_description}
-💰 *التكلفة الكلية:* ${debt.repair_cost.toLocaleString()} دينار عراقي
-✅ *المبلغ المدفوع:* ${debt.paid_amount.toLocaleString()} دينار
-⚠️ *المبلغ المتبقي:* ${debt.remaining_amount.toLocaleString()} دينار
+💰 *التكلفة الكلية:* ${(debt.repair_cost || 0).toLocaleString()} دينار عراقي
+✅ *المبلغ المدفوع:* ${(debt.paid_amount || 0).toLocaleString()} دينار
+⚠️ *المبلغ المتبقي:* ${(debt.remaining_amount || 0).toLocaleString()} دينار
 
 📅 *تاريخ الاستحقاق:* ${new Date(debt.due_date).toLocaleDateString('ar-IQ')}
 
@@ -600,10 +600,10 @@ const PhoneRepairSystemFull = ({ user, onLogout }) => {
                   <p className="text-gray-600">🔧 {repair.issue_description}</p>
                 </div>
                 <div className="text-left">
-                  <p className="text-3xl font-bold text-indigo-600 mb-1">{repair.repair_cost.toLocaleString()} د.ع</p>
-                  <p className="text-sm text-gray-500">مدفوع: {repair.paid_amount.toLocaleString()} د.ع</p>
-                  {repair.remaining_amount > 0 && (
-                    <p className="text-sm text-red-600 font-bold">متبقي: {repair.remaining_amount.toLocaleString()} د.ع</p>
+                  <p className="text-3xl font-bold text-indigo-600 mb-1">{(repair.repair_cost || 0).toLocaleString()} د.ع</p>
+                  <p className="text-sm text-gray-500">مدفوع: {(repair.paid_amount || 0).toLocaleString()} د.ع</p>
+                  {(repair.remaining_amount || 0) > 0 && (
+                    <p className="text-sm text-red-600 font-bold">متبقي: {(repair.remaining_amount || 0).toLocaleString()} د.ع</p>
                   )}
                 </div>
               </div>
@@ -744,7 +744,7 @@ const PhoneRepairSystemFull = ({ user, onLogout }) => {
                       <div key={idx} className="flex justify-between items-center bg-white p-2 rounded">
                         <span>{part.name}</span>
                         <div className="flex items-center gap-2">
-                          <span className="font-medium">{part.cost.toLocaleString()} د.ع</span>
+                          <span className="font-medium">{(part.cost || 0).toLocaleString()} د.ع</span>
                           <button
                             type="button"
                             onClick={() => removePartFromRepair(idx)}
@@ -792,13 +792,13 @@ const PhoneRepairSystemFull = ({ user, onLogout }) => {
                     <div>
                       <p className="text-sm text-gray-600">تكلفة القطع</p>
                       <p className="text-lg font-bold text-red-600">
-                        {newRepair.parts_used.reduce((sum, p) => sum + p.cost, 0).toLocaleString()} د.ع
+                        {newRepair.parts_used.reduce((sum, p) => sum + (p.cost || 0), 0).toLocaleString()} د.ع
                       </p>
                     </div>
                     <div>
                       <p className="text-sm text-gray-600">الربح الصافي</p>
                       <p className="text-lg font-bold text-green-600">
-                        {(parseFloat(newRepair.repair_cost || 0) - newRepair.parts_used.reduce((sum, p) => sum + p.cost, 0)).toLocaleString()} د.ع
+                        {(parseFloat(newRepair.repair_cost || 0) - newRepair.parts_used.reduce((sum, p) => sum + (p.cost || 0), 0)).toLocaleString()} د.ع
                       </p>
                     </div>
                   </div>
@@ -960,8 +960,8 @@ const PhoneRepairSystemFull = ({ user, onLogout }) => {
                       <p className="text-gray-600 mt-1">🔧 {part.part_name}</p>
                     </div>
                     <div className="text-right">
-                      <p className="text-2xl font-bold text-indigo-600">{part.cost.toLocaleString()} د.ع</p>
-                      <p className="text-sm text-gray-500">الكمية: {part.quantity}</p>
+                      <p className="text-2xl font-bold text-indigo-600">{(part.cost || 0).toLocaleString()} د.ع</p>
+                      <p className="text-sm text-gray-500">الكمية: {part.quantity || 0}</p>
                     </div>
                   </div>
                   <div className="flex gap-2 pt-3 border-t border-gray-200">
@@ -1231,15 +1231,15 @@ const PhoneRepairSystemFull = ({ user, onLogout }) => {
                       <div className="grid grid-cols-3 gap-4 mb-4 p-4 bg-white rounded-lg">
                         <div className="text-center">
                           <p className="text-sm text-gray-600 mb-1">التكلفة الكلية</p>
-                          <p className="font-bold text-lg text-blue-600">{debt.repair_cost.toLocaleString()} د.ع</p>
+                          <p className="font-bold text-lg text-blue-600">{(debt.repair_cost || 0).toLocaleString()} د.ع</p>
                         </div>
                         <div className="text-center">
                           <p className="text-sm text-gray-600 mb-1">المبلغ المدفوع</p>
-                          <p className="font-bold text-lg text-green-600">{debt.paid_amount.toLocaleString()} د.ع</p>
+                          <p className="font-bold text-lg text-green-600">{(debt.paid_amount || 0).toLocaleString()} د.ع</p>
                         </div>
                         <div className="text-center">
                           <p className="text-sm text-gray-600 mb-1">المبلغ المتبقي</p>
-                          <p className="font-bold text-lg text-red-600">{debt.remaining_amount.toLocaleString()} د.ع</p>
+                          <p className="font-bold text-lg text-red-600">{(debt.remaining_amount || 0).toLocaleString()} د.ع</p>
                         </div>
                       </div>
 
@@ -1778,6 +1778,18 @@ const PhoneRepairSystemFull = ({ user, onLogout }) => {
           </div>
         </div>
       )}
+
+      {/* حقوق المبرمج */}
+      <footer className="fixed bottom-0 left-0 right-0 bg-gradient-to-r from-blue-600 to-cyan-600 text-white py-3 text-center shadow-lg z-40">
+        <div className="flex items-center justify-center gap-2">
+          <span className="text-sm">تطوير وبرمجة: المهندس أمير بهاء الدين</span>
+          <span className="text-blue-200">|</span>
+          <a href="tel:07723042577" className="text-sm hover:text-blue-200 transition-all flex items-center gap-1">
+            <MessageCircle size={14} />
+            07723042577
+          </a>
+        </div>
+      </footer>
     </div>
   );
 };
