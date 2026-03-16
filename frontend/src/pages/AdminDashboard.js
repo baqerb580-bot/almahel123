@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import axios from "axios";
 import { toast } from "sonner";
-import { MapPin, Users, CheckCircle, Clock, AlertCircle, Plus, LogOut, Bell, X, Trash2, Play, UserPlus, Settings as SettingsIcon, Send, Star, Edit } from "lucide-react";
+import { MapPin, Users, CheckCircle, Clock, AlertCircle, Plus, LogOut, Bell, X, Trash2, Play, UserPlus, Settings as SettingsIcon, Send, Star, Edit, MessageCircle } from "lucide-react";
 import { playNotificationSound } from "../utils/notificationSound";
 import Settings from "./Settings";
 
@@ -1344,6 +1344,36 @@ _نظام إدارة الصيانة_`;
                     </div>
                   </div>
                 )}
+
+                {/* زر فتح Google Maps */}
+                <div className="mt-4 flex gap-3">
+                  <a 
+                    href={`https://www.google.com/maps?q=${locations[0].latitude},${locations[0].longitude}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex-1 bg-blue-600 text-white px-6 py-3 rounded-xl font-bold text-center hover:bg-blue-700 transition-all flex items-center justify-center gap-2"
+                  >
+                    <MapPin size={20} />
+                    فتح في Google Maps
+                  </a>
+                  <a 
+                    href={`https://waze.com/ul?ll=${locations[0].latitude},${locations[0].longitude}&navigate=yes`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex-1 bg-purple-600 text-white px-6 py-3 rounded-xl font-bold text-center hover:bg-purple-700 transition-all flex items-center justify-center gap-2"
+                  >
+                    <Play size={20} />
+                    فتح في Waze
+                  </a>
+                </div>
+
+                {/* عنوان العميل */}
+                {selectedTask.customer_address && (
+                  <div className="mt-4 bg-yellow-50 p-4 rounded-xl">
+                    <h4 className="font-bold text-yellow-800 mb-2">📍 عنوان العميل:</h4>
+                    <p className="text-gray-700">{selectedTask.customer_address}</p>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="text-center py-16">
@@ -1838,6 +1868,17 @@ _نظام إدارة الصيانة_`;
         </div>
       )}
 
+      {/* حقوق المبرمج */}
+      <footer className="fixed bottom-0 left-0 right-0 bg-gradient-to-r from-indigo-600 to-purple-600 text-white py-3 text-center shadow-lg z-40">
+        <div className="flex items-center justify-center gap-2">
+          <span className="text-sm">تطوير وبرمجة: المهندس أمير بهاء الدين</span>
+          <span className="text-indigo-200">|</span>
+          <a href="tel:07723042577" className="text-sm hover:text-indigo-200 transition-all flex items-center gap-1">
+            <MessageCircle size={14} />
+            07723042577
+          </a>
+        </div>
+      </footer>
     </div>
   );
 };

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import axios from "axios";
 import { toast } from "sonner";
-import { Wrench, DollarSign, Smartphone, Users } from "lucide-react";
+import { Wrench, DollarSign, Smartphone, Users, MessageCircle } from "lucide-react";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
@@ -116,6 +116,18 @@ const Login = ({ onLogin }) => {
           </div>
         </div>
       </div>
+
+      {/* حقوق المبرمج */}
+      <footer className="fixed bottom-0 left-0 right-0 bg-white/80 backdrop-blur-sm text-gray-700 py-3 text-center shadow-lg z-40">
+        <div className="flex items-center justify-center gap-2">
+          <span className="text-sm font-medium">تطوير وبرمجة: المهندس أمير بهاء الدين</span>
+          <span className="text-gray-400">|</span>
+          <a href="tel:07723042577" className="text-sm text-purple-600 hover:text-purple-800 transition-all flex items-center gap-1 font-medium">
+            <MessageCircle size={14} />
+            07723042577
+          </a>
+        </div>
+      </footer>
     </div>
   );
 };

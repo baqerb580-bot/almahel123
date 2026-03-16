@@ -934,6 +934,18 @@ _نظام محاسبة الوكلاء_`;
           </div>
         </div>
       )}
+
+      {/* حقوق المبرمج */}
+      <footer className="fixed bottom-0 left-0 right-0 bg-gradient-to-r from-teal-600 to-green-600 text-white py-3 text-center shadow-lg z-40">
+        <div className="flex items-center justify-center gap-2">
+          <span className="text-sm">تطوير وبرمجة: المهندس أمير بهاء الدين</span>
+          <span className="text-teal-200">|</span>
+          <a href="tel:07723042577" className="text-sm hover:text-teal-200 transition-all flex items-center gap-1">
+            <MessageCircle size={14} />
+            07723042577
+          </a>
+        </div>
+      </footer>
     </div>
   );
 };

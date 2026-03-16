@@ -1887,6 +1887,45 @@ async def broadcast_message(message: dict, current_user: dict = Depends(get_curr
         "failed": failed_count
     }
 
+@api_router.get("/locations/{task_id}")
+async def get_task_location(task_id: str, current_user: dict = Depends(get_current_user)):
+    """جلب موقع المهمة (موقع الموظف المكلف بالمهمة)"""
+    if current_user["system"] != "tasks":
+        raise HTTPException(status_code=403, detail="هذا النظام مخصص للمهام فقط")
+    
+    # جلب المهمة للحصول على معرف الموظف
+    task = await db.tasks.find_one({"id": task_id}, {"_id": 0})
+    if not task:
+        raise HTTPException(status_code=404, detail="المهمة غير موجودة")
+    
+    employee_id = task.get("assigned_to")
+    if not employee_id:
+        return []
+    
+    # جلب آخر موقع مسجل للموظف
+    location = await db.locations.find_one(
+        {"employee_id": employee_id},
+        {"_id": 0},
+        sort=[("timestamp", -1)]
+    )
+    
+    if location:
+        # إضافة معلومات العميل من المهمة
+        location["customer_name"] = task.get("customer_name", "")
+        location["customer_address"] = task.get("customer_address", "")
+        return [location]
+    
+    # إرجاع موقع العميل كموقع افتراضي
+    return [{
+        "employee_id": employee_id,
+        "latitude": 33.3152,  # بغداد - موقع افتراضي
+        "longitude": 44.3661,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "customer_name": task.get("customer_name", ""),
+        "customer_address": task.get("customer_address", ""),
+        "note": "في انتظار تحديث الموقع من الموظف"
+    }]
+
 @api_router.get("/employee-location/{employee_id}")
 async def get_employee_location(employee_id: str, current_user: dict = Depends(get_current_user)):
     """جلب موقع الموظف"""
