@@ -128,6 +128,82 @@ async def create_default_accounts():
             await db.users.insert_one(user_doc)
             print(f"✓ Default account created: {account['username']} ({account['system']})")
 
+# Background task for checking delayed tasks
+import asyncio
+
+async def check_delayed_tasks():
+    """التحقق من المهام المتأخرة وإرسال تنبيهات"""
+    while True:
+        try:
+            # الانتظار 10 دقائق قبل كل فحص
+            await asyncio.sleep(600)  # 10 minutes
+            
+            now = datetime.now(timezone.utc)
+            
+            # جلب المهام غير المكتملة
+            tasks = await db.tasks.find({
+                "status": {"$in": ["pending", "accepted", "in_progress"]}
+            }).to_list(1000)
+            
+            for task in tasks:
+                created_at = datetime.fromisoformat(task["created_at"].replace('Z', '+00:00'))
+                time_diff = (now - created_at).total_seconds() / 3600  # بالساعات
+                
+                # إذا مر أكثر من ساعة على المهمة
+                if time_diff >= 1:
+                    # عدد التنبيهات المرسلة
+                    alerts_sent = task.get("delay_alerts_sent", 0)
+                    
+                    # إرسال حتى 3 تنبيهات
+                    if alerts_sent < 3:
+                        # جلب بيانات الموظف
+                        employee = await db.users.find_one({"id": task.get("assigned_to")})
+                        admin = await db.users.find_one({"system": "tasks", "role": "admin"})
+                        
+                        delay_hours = int(time_diff)
+                        delay_minutes = int((time_diff - delay_hours) * 60)
+                        
+                        message = f"""
+⚠️ <b>تنبيه تأخير مهمة!</b> (تنبيه {alerts_sent + 1}/3)
+
+👥 <b>الزبون:</b> {task['customer_name']}
+📍 <b>العنوان:</b> {task['customer_address']}
+🔧 <b>العطل:</b> {task['issue_description']}
+👤 <b>الموظف:</b> {task.get('assigned_to_name', 'غير معين')}
+
+⏰ <b>مدة التأخير:</b> {delay_hours} ساعة و {delay_minutes} دقيقة
+📊 <b>الحالة:</b> {task['status']}
+                        """
+                        
+                        # إرسال للموظف
+                        if employee and employee.get("telegram_chat_id"):
+                            await send_telegram_message(employee["telegram_chat_id"], message, task_id=task["id"])
+                        
+                        # إرسال للمدير
+                        if admin and admin.get("telegram_chat_id"):
+                            await send_telegram_message(admin["telegram_chat_id"], message, task_id=task["id"])
+                        
+                        # إرسال للمدير المفوض
+                        if admin and admin.get("delegated_admin_telegram_id"):
+                            await send_telegram_message(admin["delegated_admin_telegram_id"], message, task_id=task["id"])
+                        
+                        # تحديث عداد التنبيهات
+                        await db.tasks.update_one(
+                            {"id": task["id"]},
+                            {"$set": {"delay_alerts_sent": alerts_sent + 1}}
+                        )
+                        
+                        print(f"⚠️ Delay alert {alerts_sent + 1} sent for task {task['id']}")
+                        
+        except Exception as e:
+            print(f"Error in check_delayed_tasks: {e}")
+
+@app.on_event("startup")
+async def start_background_tasks():
+    """بدء المهام الخلفية"""
+    asyncio.create_task(check_delayed_tasks())
+    print("✓ Background task for delayed tasks started")
+
 # Models
 class UserLogin(BaseModel):
     username: str
@@ -595,6 +671,58 @@ async def create_task(task_data: TaskCreate, current_user: dict = Depends(get_cu
     await db.tasks.insert_one(task_doc)
     return {"message": "تم إنشاء المهمة بنجاح", "task_id": task_id}
 
+# Model for task update
+class TaskUpdate(BaseModel):
+    customer_name: str
+    customer_phone: str
+    customer_address: str
+    issue_description: str
+    assigned_to: Optional[str] = None
+
+@api_router.put("/tasks/{task_id}")
+async def update_task(task_id: str, task_data: TaskUpdate, current_user: dict = Depends(get_current_user)):
+    """تحديث مهمة"""
+    if current_user["system"] != "tasks":
+        raise HTTPException(status_code=403, detail="هذا النظام مخصص للمهام فقط")
+    
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="الصلاحية للمدير فقط")
+    
+    task = await db.tasks.find_one({"id": task_id})
+    if not task:
+        raise HTTPException(status_code=404, detail="المهمة غير موجودة")
+    
+    update_data = {
+        "customer_name": task_data.customer_name,
+        "customer_phone": task_data.customer_phone,
+        "customer_address": task_data.customer_address,
+        "issue_description": task_data.issue_description,
+    }
+    
+    # تحديث الموظف المكلف إذا تغير
+    if task_data.assigned_to:
+        tech = await db.users.find_one({"id": task_data.assigned_to})
+        if tech:
+            update_data["assigned_to"] = task_data.assigned_to
+            update_data["assigned_to_name"] = tech["name"]
+            
+            # إرسال إشعار للموظف الجديد إذا تغير
+            if task.get("assigned_to") != task_data.assigned_to:
+                if tech.get("telegram_chat_id"):
+                    message = f"""
+🔄 <b>تم تحديث مهمة!</b>
+
+👤 <b>الزبون:</b> {task_data.customer_name}
+📞 <b>الهاتف:</b> {task_data.customer_phone}
+📍 <b>العنوان:</b> {task_data.customer_address}
+🔧 <b>العطل:</b> {task_data.issue_description}
+⏰ <b>التاريخ:</b> {datetime.now().strftime('%Y-%m-%d %H:%M')}
+                    """
+                    await send_telegram_message(tech["telegram_chat_id"], message, task_id=task_id)
+    
+    await db.tasks.update_one({"id": task_id}, {"$set": update_data})
+    return {"message": "تم تحديث المهمة بنجاح"}
+
 @api_router.delete("/tasks/{task_id}")
 async def delete_task(task_id: str, current_user: dict = Depends(get_current_user)):
     if current_user["system"] != "tasks":
@@ -674,9 +802,16 @@ async def start_task(task_id: str, current_user: dict = Depends(get_current_user
     
     return {"message": "تم بدء المهمة بنجاح"}
 
+# Model for task completion with report
+class TaskCompleteRequest(BaseModel):
+    task_id: Optional[str] = None
+    report_text: str
+    images: Optional[List[str]] = []
+    success: bool = True
+
 @api_router.post("/tasks/{task_id}/complete")
-async def complete_task(task_id: str, current_user: dict = Depends(get_current_user)):
-    """إكمال مهمة"""
+async def complete_task(task_id: str, report_data: Optional[TaskCompleteRequest] = None, current_user: dict = Depends(get_current_user)):
+    """إكمال مهمة مع تقرير"""
     if current_user["system"] != "tasks":
         raise HTTPException(status_code=403, detail="هذا النظام مخصص للمهام فقط")
     
@@ -688,15 +823,54 @@ async def complete_task(task_id: str, current_user: dict = Depends(get_current_u
     if task.get("assigned_to") != current_user["id"] and current_user["role"] != "admin":
         raise HTTPException(status_code=403, detail="هذه المهمة ليست معينة لك")
     
+    # حساب مدة المهمة بالدقائق
+    duration_minutes = None
+    if task.get("started_at"):
+        started_at = datetime.fromisoformat(task["started_at"].replace('Z', '+00:00'))
+        completed_at = datetime.now(timezone.utc)
+        duration_minutes = int((completed_at - started_at).total_seconds() / 60)
+    
+    # تحديث المهمة مع التقرير
+    update_data = {
+        "status": "completed",
+        "completed_at": datetime.now(timezone.utc).isoformat(),
+        "duration_minutes": duration_minutes
+    }
+    
+    # إضافة التقرير إذا تم إرساله
+    if report_data:
+        update_data["report"] = report_data.report_text
+        update_data["report_images"] = report_data.images or []
+        update_data["success"] = report_data.success
+    
     await db.tasks.update_one(
         {"id": task_id},
-        {
-            "$set": {
-                "status": "completed",
-                "completed_at": datetime.now(timezone.utc).isoformat()
-            }
-        }
+        {"$set": update_data}
     )
+    
+    # إرسال إشعار للمدير عبر Telegram
+    admin = await db.users.find_one({"system": "tasks", "role": "admin"})
+    if admin and admin.get("telegram_chat_id"):
+        success_status = "✅ مكتملة بنجاح" if (not report_data or report_data.success) else "❌ غير مكتملة"
+        report_text = report_data.report_text if report_data else "لا يوجد تقرير"
+        
+        message = f"""
+📋 <b>تقرير مهمة</b>
+
+👤 <b>الموظف:</b> {current_user['name']}
+👥 <b>الزبون:</b> {task['customer_name']}
+📍 <b>العنوان:</b> {task['customer_address']}
+
+📊 <b>الحالة:</b> {success_status}
+📝 <b>التقرير:</b> {report_text}
+⏱️ <b>المدة:</b> {duration_minutes or 0} دقيقة
+⏰ <b>وقت الإنهاء:</b> {datetime.now().strftime('%Y-%m-%d %H:%M')}
+        """
+        await send_telegram_message(admin["telegram_chat_id"], message, task_id=task_id)
+        
+        # إرسال للمدير المفوض أيضاً
+        if admin.get("delegated_admin_telegram_id"):
+            await send_telegram_message(admin["delegated_admin_telegram_id"], message, task_id=task_id)
     
     return {"message": "تم إكمال المهمة بنجاح"}
 

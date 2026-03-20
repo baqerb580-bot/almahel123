@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import axios from "axios";
 import { toast } from "sonner";
-import { MapPin, Users, CheckCircle, Clock, AlertCircle, Plus, LogOut, Bell, X, Trash2, Play, UserPlus, Settings as SettingsIcon, Send, Star, Edit, MessageCircle } from "lucide-react";
+import { MapPin, Users, CheckCircle, Clock, AlertCircle, Plus, LogOut, Bell, X, Trash2, Play, UserPlus, Settings as SettingsIcon, Send, Star, Edit, MessageCircle, FileText, Eye } from "lucide-react";
 import { playNotificationSound } from "../utils/notificationSound";
 import Settings from "./Settings";
 
@@ -73,6 +73,10 @@ const AdminDashboard = ({ user, onLogout }) => {
   const [ratingTask, setRatingTask] = useState(null);
   const [ratingValue, setRatingValue] = useState(5);
   const [ratingComment, setRatingComment] = useState("");
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [selectedTaskForReport, setSelectedTaskForReport] = useState(null);
+  const [showEditTaskModal, setShowEditTaskModal] = useState(false);
+  const [editingTask, setEditingTask] = useState(null);
   const [newTask, setNewTask] = useState({
     customer_name: "",
     customer_phone: "",
@@ -273,6 +277,40 @@ _نظام إدارة الصيانة_`;
       } catch (error) {
         toast.error("فشل حذف المهمة");
       }
+    }
+  };
+
+  // ============== VIEW REPORT FUNCTION ==============
+  const handleViewReport = (task) => {
+    setSelectedTaskForReport(task);
+    setShowReportModal(true);
+  };
+
+  // ============== EDIT TASK FUNCTION ==============
+  const handleEditTask = (task) => {
+    setEditingTask({
+      ...task,
+      assigned_to: task.assigned_to || ""
+    });
+    setShowEditTaskModal(true);
+  };
+
+  const handleUpdateTask = async (e) => {
+    e.preventDefault();
+    try {
+      await axios.put(`${API}/tasks/${editingTask.id}`, {
+        customer_name: editingTask.customer_name,
+        customer_phone: editingTask.customer_phone,
+        customer_address: editingTask.customer_address,
+        issue_description: editingTask.issue_description,
+        assigned_to: editingTask.assigned_to
+      }, getAuthHeaders());
+      toast.success("تم تحديث المهمة بنجاح");
+      setShowEditTaskModal(false);
+      setEditingTask(null);
+      fetchData();
+    } catch (error) {
+      toast.error("فشل تحديث المهمة");
     }
   };
 
@@ -1192,7 +1230,7 @@ _نظام إدارة الصيانة_`;
                 </div>
               </div>
 
-              <div className="flex gap-3">
+              <div className="flex gap-3 flex-wrap">
                 {task.status === "in_progress" && (
                   <button
                     onClick={() => viewTaskLocation(task)}
@@ -1203,6 +1241,30 @@ _نظام إدارة الصيانة_`;
                     عرض الموقع
                   </button>
                 )}
+                
+                {/* زر عرض التقرير */}
+                <button
+                  onClick={() => handleViewReport(task)}
+                  className={`px-4 py-2 rounded-lg font-medium flex items-center gap-2 transition-all ${
+                    task.report 
+                      ? 'bg-green-100 text-green-700 hover:bg-green-200' 
+                      : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                  }`}
+                  data-testid={`view-report-button-${task.id}`}
+                >
+                  <FileText size={18} />
+                  {task.report ? 'عرض التقرير' : 'لا يوجد تقرير'}
+                </button>
+                
+                {/* زر التعديل */}
+                <button
+                  onClick={() => handleEditTask(task)}
+                  className="px-4 py-2 rounded-lg font-medium flex items-center gap-2 bg-blue-100 text-blue-700 hover:bg-blue-200 transition-all"
+                  data-testid={`edit-task-button-${task.id}`}
+                >
+                  <Edit size={18} />
+                  تعديل
+                </button>
                 
                 <button
                   onClick={() => handleDeleteTask(task.id)}
@@ -1879,6 +1941,199 @@ _نظام إدارة الصيانة_`;
           </a>
         </div>
       </footer>
+
+      {/* Report View Modal */}
+      {showReportModal && selectedTaskForReport && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" data-testid="report-view-modal">
+          <div className="card max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-2xl font-bold" style={{ color: '#667eea' }}>
+                <FileText className="inline ml-2" size={28} />
+                تقرير المهمة
+              </h2>
+              <button onClick={() => { setShowReportModal(false); setSelectedTaskForReport(null); }}>
+                <X size={24} />
+              </button>
+            </div>
+            
+            {/* معلومات المهمة */}
+            <div className="bg-gray-50 rounded-xl p-4 mb-4">
+              <h3 className="font-bold text-lg mb-3 text-gray-800">📋 معلومات المهمة</h3>
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div>
+                  <span className="text-gray-500">الزبون:</span>
+                  <span className="font-medium mr-2">{selectedTaskForReport.customer_name}</span>
+                </div>
+                <div>
+                  <span className="text-gray-500">الهاتف:</span>
+                  <span className="font-medium mr-2">{selectedTaskForReport.customer_phone}</span>
+                </div>
+                <div className="col-span-2">
+                  <span className="text-gray-500">العنوان:</span>
+                  <span className="font-medium mr-2">{selectedTaskForReport.customer_address}</span>
+                </div>
+                <div className="col-span-2">
+                  <span className="text-gray-500">العطل:</span>
+                  <span className="font-medium mr-2">{selectedTaskForReport.issue_description}</span>
+                </div>
+                <div>
+                  <span className="text-gray-500">الموظف:</span>
+                  <span className="font-medium mr-2">{selectedTaskForReport.assigned_to_name || 'غير معين'}</span>
+                </div>
+                <div>
+                  <span className="text-gray-500">الحالة:</span>
+                  <span className={`font-medium mr-2 ${
+                    selectedTaskForReport.status === 'completed' ? 'text-green-600' : 'text-yellow-600'
+                  }`}>
+                    {getStatusText(selectedTaskForReport.status)}
+                  </span>
+                </div>
+              </div>
+            </div>
+            
+            {/* التقرير */}
+            {selectedTaskForReport.report ? (
+              <div className={`rounded-xl p-4 ${selectedTaskForReport.success !== false ? 'bg-green-50 border-2 border-green-200' : 'bg-red-50 border-2 border-red-200'}`}>
+                <div className="flex items-center gap-2 mb-3">
+                  {selectedTaskForReport.success !== false ? (
+                    <>
+                      <CheckCircle size={24} className="text-green-600" />
+                      <h3 className="font-bold text-lg text-green-800">✅ المهمة مكتملة بنجاح</h3>
+                    </>
+                  ) : (
+                    <>
+                      <AlertCircle size={24} className="text-red-600" />
+                      <h3 className="font-bold text-lg text-red-800">❌ المهمة غير مكتملة</h3>
+                    </>
+                  )}
+                </div>
+                
+                <div className="bg-white rounded-lg p-4 mb-3">
+                  <h4 className="font-bold text-gray-700 mb-2">📝 نص التقرير:</h4>
+                  <p className="text-gray-800 whitespace-pre-wrap">{selectedTaskForReport.report}</p>
+                </div>
+                
+                {selectedTaskForReport.duration_minutes && (
+                  <div className="flex items-center gap-2 text-gray-600">
+                    <Clock size={18} />
+                    <span>مدة التنفيذ: <strong>{selectedTaskForReport.duration_minutes}</strong> دقيقة</span>
+                  </div>
+                )}
+                
+                {selectedTaskForReport.completed_at && (
+                  <div className="flex items-center gap-2 text-gray-600 mt-2">
+                    <CheckCircle size={18} />
+                    <span>تاريخ الإنهاء: <strong>{new Date(selectedTaskForReport.completed_at).toLocaleString('ar-IQ')}</strong></span>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="bg-yellow-50 border-2 border-yellow-200 rounded-xl p-6 text-center">
+                <AlertCircle size={48} className="mx-auto text-yellow-500 mb-3" />
+                <h3 className="font-bold text-lg text-yellow-800 mb-2">لا يوجد تقرير بعد</h3>
+                <p className="text-yellow-700">الموظف لم يرسل تقرير لهذه المهمة حتى الآن</p>
+              </div>
+            )}
+            
+            <button
+              onClick={() => { setShowReportModal(false); setSelectedTaskForReport(null); }}
+              className="w-full mt-4 secondary-button"
+            >
+              إغلاق
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Task Modal */}
+      {showEditTaskModal && editingTask && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" data-testid="edit-task-modal">
+          <div className="card max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-2xl font-bold" style={{ color: '#667eea' }}>
+                <Edit className="inline ml-2" size={28} />
+                تعديل المهمة
+              </h2>
+              <button onClick={() => { setShowEditTaskModal(false); setEditingTask(null); }}>
+                <X size={24} />
+              </button>
+            </div>
+            
+            <form onSubmit={handleUpdateTask} className="space-y-4">
+              <div>
+                <label className="label">اسم المشترك</label>
+                <input
+                  type="text"
+                  className="input-field"
+                  value={editingTask.customer_name}
+                  onChange={(e) => setEditingTask({ ...editingTask, customer_name: e.target.value })}
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="label">رقم الهاتف</label>
+                <input
+                  type="text"
+                  className="input-field"
+                  value={editingTask.customer_phone}
+                  onChange={(e) => setEditingTask({ ...editingTask, customer_phone: e.target.value })}
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="label">العنوان</label>
+                <input
+                  type="text"
+                  className="input-field"
+                  value={editingTask.customer_address}
+                  onChange={(e) => setEditingTask({ ...editingTask, customer_address: e.target.value })}
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="label">وصف العطل</label>
+                <textarea
+                  className="input-field"
+                  rows="4"
+                  value={editingTask.issue_description}
+                  onChange={(e) => setEditingTask({ ...editingTask, issue_description: e.target.value })}
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="label">الموظف المكلف</label>
+                <select
+                  className="input-field"
+                  value={editingTask.assigned_to}
+                  onChange={(e) => setEditingTask({ ...editingTask, assigned_to: e.target.value })}
+                >
+                  <option value="">-- اختر موظف --</option>
+                  {technicians.map((tech) => (
+                    <option key={tech.id} value={tech.id}>{tech.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex gap-4">
+                <button type="submit" className="success-button flex-1">
+                  ✓ حفظ التعديلات
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setShowEditTaskModal(false); setEditingTask(null); }}
+                  className="secondary-button flex-1"
+                >
+                  إلغاء
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
