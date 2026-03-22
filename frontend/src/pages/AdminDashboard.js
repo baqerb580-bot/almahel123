@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import axios from "axios";
 import { toast } from "sonner";
-import { MapPin, Users, CheckCircle, Clock, AlertCircle, Plus, LogOut, Bell, X, Trash2, Play, UserPlus, Settings as SettingsIcon, Send, Star, Edit, MessageCircle, FileText, Eye } from "lucide-react";
+import { MapPin, Users, CheckCircle, Clock, AlertCircle, Plus, LogOut, Bell, X, Trash2, Play, UserPlus, Settings as SettingsIcon, Send, Star, Edit, MessageCircle, FileText, Eye, DollarSign, CreditCard, Wallet, Calendar } from "lucide-react";
 import { playNotificationSound } from "../utils/notificationSound";
 import Settings from "./Settings";
 
@@ -77,6 +77,19 @@ const AdminDashboard = ({ user, onLogout }) => {
   const [selectedTaskForReport, setSelectedTaskForReport] = useState(null);
   const [showEditTaskModal, setShowEditTaskModal] = useState(false);
   const [editingTask, setEditingTask] = useState(null);
+  
+  // ============== SALARY SYSTEM STATES ==============
+  const [showSalaryPanel, setShowSalaryPanel] = useState(false);
+  const [salarySummary, setSalarySummary] = useState([]);
+  const [selectedEmpForSalary, setSelectedEmpForSalary] = useState(null);
+  const [empSalaryInfo, setEmpSalaryInfo] = useState(null);
+  const [showSetSalaryModal, setShowSetSalaryModal] = useState(false);
+  const [showAddLoanModal, setShowAddLoanModal] = useState(false);
+  const [showPaySalaryModal, setShowPaySalaryModal] = useState(false);
+  const [newSalarySetup, setNewSalarySetup] = useState({ base_salary: "", salary_day: 1 });
+  const [newLoan, setNewLoan] = useState({ amount: "", reason: "" });
+  const [paymentNotes, setPaymentNotes] = useState("");
+  
   const [newTask, setNewTask] = useState({
     customer_name: "",
     customer_phone: "",
@@ -577,6 +590,106 @@ _نظام إدارة الصيانة_`;
     return statusMap[status] || status;
   };
 
+  // ============== SALARY SYSTEM FUNCTIONS ==============
+  
+  const fetchSalarySummary = async () => {
+    try {
+      const response = await axios.get(`${API}/employees/salary-summary`, getAuthHeaders());
+      setSalarySummary(response.data);
+    } catch (error) {
+      console.error("Error fetching salary summary:", error);
+    }
+  };
+
+  const fetchEmployeeSalaryInfo = async (employeeId) => {
+    try {
+      const response = await axios.get(`${API}/employees/${employeeId}/salary-info`, getAuthHeaders());
+      setEmpSalaryInfo(response.data);
+    } catch (error) {
+      toast.error("فشل جلب معلومات الراتب");
+    }
+  };
+
+  const handleSetSalary = async (e) => {
+    e.preventDefault();
+    if (!newSalarySetup.base_salary) {
+      toast.error("يرجى إدخال الراتب الأساسي");
+      return;
+    }
+    
+    try {
+      await axios.post(`${API}/employees/${selectedEmpForSalary.id}/salary-setup`, {
+        employee_id: selectedEmpForSalary.id,
+        base_salary: parseFloat(newSalarySetup.base_salary),
+        salary_day: parseInt(newSalarySetup.salary_day)
+      }, getAuthHeaders());
+      
+      toast.success("تم إعداد الراتب بنجاح");
+      setShowSetSalaryModal(false);
+      setNewSalarySetup({ base_salary: "", salary_day: 1 });
+      fetchSalarySummary();
+      if (selectedEmpForSalary) {
+        fetchEmployeeSalaryInfo(selectedEmpForSalary.id);
+      }
+    } catch (error) {
+      toast.error("فشل إعداد الراتب");
+    }
+  };
+
+  const handleAddLoan = async (e) => {
+    e.preventDefault();
+    if (!newLoan.amount || !newLoan.reason) {
+      toast.error("يرجى ملء جميع الحقول");
+      return;
+    }
+    
+    try {
+      await axios.post(`${API}/loans`, {
+        employee_id: selectedEmpForSalary.id,
+        amount: parseFloat(newLoan.amount),
+        reason: newLoan.reason
+      }, getAuthHeaders());
+      
+      toast.success("تم إضافة السلفة بنجاح");
+      setShowAddLoanModal(false);
+      setNewLoan({ amount: "", reason: "" });
+      fetchSalarySummary();
+      fetchEmployeeSalaryInfo(selectedEmpForSalary.id);
+    } catch (error) {
+      toast.error("فشل إضافة السلفة");
+    }
+  };
+
+  const handlePaySalary = async () => {
+    try {
+      const response = await axios.post(`${API}/salary-payments`, {
+        employee_id: selectedEmpForSalary.id,
+        notes: paymentNotes
+      }, getAuthHeaders());
+      
+      toast.success(`تم تسليم الراتب: ${response.data.final_salary.toLocaleString()} دينار`);
+      setShowPaySalaryModal(false);
+      setPaymentNotes("");
+      fetchSalarySummary();
+      fetchEmployeeSalaryInfo(selectedEmpForSalary.id);
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "فشل تسليم الراتب");
+    }
+  };
+
+  const handleDeleteLoan = async (loanId) => {
+    if (!window.confirm("هل أنت متأكد من حذف هذه السلفة؟")) return;
+    
+    try {
+      await axios.delete(`${API}/loans/${loanId}`, getAuthHeaders());
+      toast.success("تم حذف السلفة بنجاح");
+      fetchEmployeeSalaryInfo(selectedEmpForSalary.id);
+      fetchSalarySummary();
+    } catch (error) {
+      toast.error("فشل حذف السلفة");
+    }
+  };
+
   return (
     <div className="min-h-screen p-6" data-testid="admin-dashboard">
       {/* Header */}
@@ -789,7 +902,375 @@ _نظام إدارة الصيانة_`;
           <Send className="inline" size={20} />
           إرسال رسالة
         </button>
+        
+        <button
+          onClick={() => {
+            setShowSalaryPanel(!showSalaryPanel);
+            if (!showSalaryPanel) fetchSalarySummary();
+          }}
+          className="card px-4 py-2 flex items-center gap-2 hover:shadow-lg transition-all"
+          style={{ background: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)', color: 'white' }}
+          data-testid="salary-panel-button"
+        >
+          <Wallet className="inline" size={20} />
+          💰 نظام الرواتب
+        </button>
       </div>
+
+      {/* ============== SALARY MANAGEMENT PANEL ============== */}
+      {showSalaryPanel && (
+        <div className="max-w-7xl mx-auto mb-6" data-testid="salary-panel">
+          <div className="card">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-2xl font-bold" style={{ color: '#667eea' }}>
+                <Wallet className="inline ml-2" size={28} />
+                💰 نظام إدارة الرواتب والسلف
+              </h2>
+              <button onClick={() => setShowSalaryPanel(false)}>
+                <X size={24} />
+              </button>
+            </div>
+
+            {/* Current Month */}
+            <div className="bg-gradient-to-r from-purple-500 to-indigo-600 text-white rounded-xl p-4 mb-6">
+              <div className="flex items-center gap-2">
+                <Calendar size={24} />
+                <span className="text-xl font-bold">
+                  شهر {new Date().toLocaleDateString('ar-IQ', { month: 'long', year: 'numeric' })}
+                </span>
+              </div>
+            </div>
+
+            {/* Employees Salary Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {technicians.map((tech) => {
+                const salaryInfo = salarySummary.find(s => s.employee_id === tech.id) || {};
+                return (
+                  <div 
+                    key={tech.id} 
+                    className={`p-4 rounded-xl border-2 cursor-pointer transition-all hover:shadow-lg ${
+                      selectedEmpForSalary?.id === tech.id ? 'border-purple-500 bg-purple-50' : 'border-gray-200'
+                    }`}
+                    onClick={() => {
+                      setSelectedEmpForSalary(tech);
+                      fetchEmployeeSalaryInfo(tech.id);
+                    }}
+                    data-testid={`salary-card-${tech.id}`}
+                  >
+                    <div className="flex justify-between items-start mb-3">
+                      <div>
+                        <h3 className="font-bold text-lg">{tech.name}</h3>
+                        <p className="text-sm text-gray-500">@{tech.username}</p>
+                      </div>
+                      {salaryInfo.is_paid ? (
+                        <span className="bg-green-100 text-green-700 px-2 py-1 rounded-full text-xs font-bold">
+                          ✅ تم التسليم
+                        </span>
+                      ) : (
+                        <span className="bg-yellow-100 text-yellow-700 px-2 py-1 rounded-full text-xs font-bold">
+                          ⏳ لم يُسلّم
+                        </span>
+                      )}
+                    </div>
+                    
+                    <div className="space-y-2 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">الراتب الأساسي:</span>
+                        <span className="font-bold">{(salaryInfo.base_salary || 0).toLocaleString()} د.ع</span>
+                      </div>
+                      <div className="flex justify-between text-red-600">
+                        <span>السلف:</span>
+                        <span className="font-bold">-{(salaryInfo.total_loans || 0).toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between text-red-600">
+                        <span>الخصومات:</span>
+                        <span className="font-bold">-{(salaryInfo.total_deductions || 0).toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between text-green-600">
+                        <span>الزيادات:</span>
+                        <span className="font-bold">+{(salaryInfo.total_bonuses || 0).toLocaleString()}</span>
+                      </div>
+                      <hr className="my-2" />
+                      <div className="flex justify-between text-lg">
+                        <span className="font-bold">الراتب النهائي:</span>
+                        <span className="font-bold text-purple-600">{(salaryInfo.final_salary || 0).toLocaleString()} د.ع</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Selected Employee Details */}
+            {selectedEmpForSalary && empSalaryInfo && (
+              <div className="mt-6 p-4 bg-gray-50 rounded-xl" data-testid="employee-salary-details">
+                <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
+                  <Users size={24} />
+                  تفاصيل راتب: {selectedEmpForSalary.name}
+                </h3>
+                
+                {/* Action Buttons */}
+                <div className="flex gap-3 mb-4 flex-wrap">
+                  <button
+                    onClick={() => {
+                      setNewSalarySetup({
+                        base_salary: empSalaryInfo.base_salary || "",
+                        salary_day: empSalaryInfo.salary_day || 1
+                      });
+                      setShowSetSalaryModal(true);
+                    }}
+                    className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 flex items-center gap-2"
+                    data-testid="set-salary-btn"
+                  >
+                    <DollarSign size={18} />
+                    تعديل الراتب
+                  </button>
+                  
+                  <button
+                    onClick={() => setShowAddLoanModal(true)}
+                    className="px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 flex items-center gap-2"
+                    data-testid="add-loan-btn"
+                  >
+                    <CreditCard size={18} />
+                    إضافة سلفة
+                  </button>
+                  
+                  <button
+                    onClick={() => setShowPaySalaryModal(true)}
+                    className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 flex items-center gap-2"
+                    disabled={salarySummary.find(s => s.employee_id === selectedEmpForSalary.id)?.is_paid}
+                    data-testid="pay-salary-btn"
+                  >
+                    <Wallet size={18} />
+                    تسليم الراتب
+                  </button>
+                </div>
+
+                {/* Unpaid Loans */}
+                {empSalaryInfo.unpaid_loans?.length > 0 && (
+                  <div className="mb-4">
+                    <h4 className="font-bold mb-2 text-red-600">💸 السلف غير المدفوعة:</h4>
+                    <div className="space-y-2">
+                      {empSalaryInfo.unpaid_loans.map((loan) => (
+                        <div key={loan.id} className="flex justify-between items-center bg-red-50 p-3 rounded-lg">
+                          <div>
+                            <span className="font-bold">{loan.amount.toLocaleString()} د.ع</span>
+                            <span className="text-sm text-gray-500 mr-2">- {loan.reason}</span>
+                            <span className="text-xs text-gray-400 mr-2">({loan.loan_date})</span>
+                          </div>
+                          <button
+                            onClick={() => handleDeleteLoan(loan.id)}
+                            className="text-red-500 hover:text-red-700"
+                          >
+                            <Trash2 size={18} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Current Month Adjustments */}
+                {empSalaryInfo.current_month_adjustments?.length > 0 && (
+                  <div>
+                    <h4 className="font-bold mb-2 text-blue-600">📋 تعديلات الشهر الحالي:</h4>
+                    <div className="space-y-2">
+                      {empSalaryInfo.current_month_adjustments.map((adj, idx) => (
+                        <div 
+                          key={idx} 
+                          className={`flex justify-between items-center p-3 rounded-lg ${
+                            adj.adjustment_type === 'bonus' ? 'bg-green-50' : 'bg-red-50'
+                          }`}
+                        >
+                          <div>
+                            <span className={`font-bold ${adj.adjustment_type === 'bonus' ? 'text-green-600' : 'text-red-600'}`}>
+                              {adj.adjustment_type === 'bonus' ? '+' : '-'}{adj.amount.toLocaleString()} د.ع
+                            </span>
+                            <span className="text-sm text-gray-500 mr-2">- {adj.reason}</span>
+                          </div>
+                          <span className="text-xs text-gray-400">{adj.date}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Set Salary Modal */}
+      {showSetSalaryModal && selectedEmpForSalary && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" data-testid="set-salary-modal">
+          <div className="card max-w-md w-full">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-bold" style={{ color: '#667eea' }}>
+                <DollarSign className="inline ml-2" size={24} />
+                إعداد راتب: {selectedEmpForSalary.name}
+              </h2>
+              <button onClick={() => setShowSetSalaryModal(false)}>
+                <X size={24} />
+              </button>
+            </div>
+            
+            <form onSubmit={handleSetSalary} className="space-y-4">
+              <div>
+                <label className="label">الراتب الأساسي (دينار)</label>
+                <input
+                  type="number"
+                  className="input-field"
+                  placeholder="500000"
+                  value={newSalarySetup.base_salary}
+                  onChange={(e) => setNewSalarySetup({ ...newSalarySetup, base_salary: e.target.value })}
+                  required
+                />
+              </div>
+              
+              <div>
+                <label className="label">يوم استلام الراتب</label>
+                <select
+                  className="input-field"
+                  value={newSalarySetup.salary_day}
+                  onChange={(e) => setNewSalarySetup({ ...newSalarySetup, salary_day: e.target.value })}
+                >
+                  {[...Array(28)].map((_, i) => (
+                    <option key={i + 1} value={i + 1}>{i + 1}</option>
+                  ))}
+                </select>
+              </div>
+              
+              <div className="flex gap-3">
+                <button type="submit" className="success-button flex-1">
+                  ✓ حفظ
+                </button>
+                <button type="button" onClick={() => setShowSetSalaryModal(false)} className="secondary-button flex-1">
+                  إلغاء
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Add Loan Modal */}
+      {showAddLoanModal && selectedEmpForSalary && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" data-testid="add-loan-modal">
+          <div className="card max-w-md w-full">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-bold" style={{ color: '#667eea' }}>
+                <CreditCard className="inline ml-2" size={24} />
+                إضافة سلفة: {selectedEmpForSalary.name}
+              </h2>
+              <button onClick={() => setShowAddLoanModal(false)}>
+                <X size={24} />
+              </button>
+            </div>
+            
+            <form onSubmit={handleAddLoan} className="space-y-4">
+              <div>
+                <label className="label">المبلغ (دينار)</label>
+                <input
+                  type="number"
+                  className="input-field"
+                  placeholder="100000"
+                  value={newLoan.amount}
+                  onChange={(e) => setNewLoan({ ...newLoan, amount: e.target.value })}
+                  required
+                />
+              </div>
+              
+              <div>
+                <label className="label">السبب</label>
+                <input
+                  type="text"
+                  className="input-field"
+                  placeholder="سلفة شخصية..."
+                  value={newLoan.reason}
+                  onChange={(e) => setNewLoan({ ...newLoan, reason: e.target.value })}
+                  required
+                />
+              </div>
+              
+              <div className="bg-yellow-50 border-l-4 border-yellow-500 p-3 rounded">
+                <p className="text-sm text-yellow-700">
+                  ⚠️ سيتم خصم هذا المبلغ تلقائياً من راتب الموظف القادم
+                </p>
+              </div>
+              
+              <div className="flex gap-3">
+                <button type="submit" className="primary-button flex-1">
+                  ✓ إضافة السلفة
+                </button>
+                <button type="button" onClick={() => setShowAddLoanModal(false)} className="secondary-button flex-1">
+                  إلغاء
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Pay Salary Modal */}
+      {showPaySalaryModal && selectedEmpForSalary && empSalaryInfo && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" data-testid="pay-salary-modal">
+          <div className="card max-w-md w-full">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-bold" style={{ color: '#667eea' }}>
+                <Wallet className="inline ml-2" size={24} />
+                تسليم راتب: {selectedEmpForSalary.name}
+              </h2>
+              <button onClick={() => setShowPaySalaryModal(false)}>
+                <X size={24} />
+              </button>
+            </div>
+            
+            <div className="space-y-3 mb-4">
+              <div className="flex justify-between p-3 bg-gray-50 rounded-lg">
+                <span>الراتب الأساسي:</span>
+                <span className="font-bold">{(empSalaryInfo.base_salary || 0).toLocaleString()} د.ع</span>
+              </div>
+              <div className="flex justify-between p-3 bg-red-50 rounded-lg text-red-600">
+                <span>السلف:</span>
+                <span className="font-bold">-{(empSalaryInfo.total_loans || 0).toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between p-3 bg-red-50 rounded-lg text-red-600">
+                <span>الخصومات:</span>
+                <span className="font-bold">-{(empSalaryInfo.total_deductions || 0).toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between p-3 bg-green-50 rounded-lg text-green-600">
+                <span>الزيادات:</span>
+                <span className="font-bold">+{(empSalaryInfo.total_bonuses || 0).toLocaleString()}</span>
+              </div>
+              <hr />
+              <div className="flex justify-between p-3 bg-purple-100 rounded-lg text-purple-700 text-lg">
+                <span className="font-bold">الراتب النهائي:</span>
+                <span className="font-bold">{(empSalaryInfo.final_salary || 0).toLocaleString()} د.ع</span>
+              </div>
+            </div>
+            
+            <div className="mb-4">
+              <label className="label">ملاحظات (اختياري)</label>
+              <textarea
+                className="input-field"
+                rows="2"
+                placeholder="أي ملاحظات إضافية..."
+                value={paymentNotes}
+                onChange={(e) => setPaymentNotes(e.target.value)}
+              />
+            </div>
+            
+            <div className="flex gap-3">
+              <button onClick={handlePaySalary} className="success-button flex-1">
+                ✓ تأكيد التسليم
+              </button>
+              <button onClick={() => setShowPaySalaryModal(false)} className="secondary-button flex-1">
+                إلغاء
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Add Technician Modal */}
       {showAddTechnician && (

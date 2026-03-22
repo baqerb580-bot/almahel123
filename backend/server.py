@@ -202,7 +202,8 @@ async def check_delayed_tasks():
 async def start_background_tasks():
     """بدء المهام الخلفية"""
     asyncio.create_task(check_delayed_tasks())
-    print("✓ Background task for delayed tasks started")
+    asyncio.create_task(check_salary_reminder())
+    print("✓ Background tasks started (delayed tasks + salary reminder)")
 
 # Models
 class UserLogin(BaseModel):
@@ -382,6 +383,54 @@ class SalaryAdjustment(BaseModel):
     reason: str
     created_by: str
     created_at: str
+
+# ============== SALARY SYSTEM MODELS (نظام الرواتب) ==============
+
+class EmployeeSalarySetup(BaseModel):
+    """إعداد راتب الموظف"""
+    employee_id: str
+    base_salary: float  # الراتب الأساسي
+    salary_day: int = 1  # يوم استلام الراتب (1-28)
+
+class EmployeeLoan(BaseModel):
+    """سلفة الموظف"""
+    model_config = ConfigDict(extra="ignore")
+    id: str
+    employee_id: str
+    employee_name: str
+    amount: float
+    reason: str
+    loan_date: str
+    is_paid: bool = False  # هل تم خصمها من الراتب
+    paid_date: Optional[str] = None
+    created_by: str
+    created_at: str
+
+class LoanCreate(BaseModel):
+    employee_id: str
+    amount: float
+    reason: str
+
+class SalaryPayment(BaseModel):
+    """دفعة راتب"""
+    model_config = ConfigDict(extra="ignore")
+    id: str
+    employee_id: str
+    employee_name: str
+    base_salary: float  # الراتب الأساسي
+    total_deductions: float  # إجمالي الخصومات
+    total_bonuses: float  # إجمالي الزيادات
+    total_loans: float  # إجمالي السلف
+    final_salary: float  # الراتب النهائي
+    payment_month: str  # الشهر (YYYY-MM)
+    payment_date: str
+    notes: Optional[str] = None
+    created_by: str
+    created_at: str
+
+class SalaryPaymentCreate(BaseModel):
+    employee_id: str
+    notes: Optional[str] = None
 
 # Helper Functions
 def hash_password(password: str) -> str:
@@ -1171,6 +1220,364 @@ async def delete_adjustment(adjustment_id: str, current_user: dict = Depends(get
     
     await db.adjustments.delete_one({"id": adjustment_id})
     return {"message": "تم حذف التعديل بنجاح"}
+
+# ============== SALARY MANAGEMENT SYSTEM (نظام إدارة الرواتب) ==============
+
+@api_router.post("/employees/{employee_id}/salary-setup")
+async def setup_employee_salary(employee_id: str, salary_data: EmployeeSalarySetup, current_user: dict = Depends(get_current_user)):
+    """إعداد راتب الموظف"""
+    if current_user["system"] != "tasks" or current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="الصلاحية للمدير فقط")
+    
+    employee = await db.users.find_one({"id": employee_id})
+    if not employee:
+        raise HTTPException(status_code=404, detail="الموظف غير موجود")
+    
+    await db.users.update_one(
+        {"id": employee_id},
+        {"$set": {
+            "base_salary": salary_data.base_salary,
+            "salary_day": salary_data.salary_day
+        }}
+    )
+    
+    return {"message": "تم إعداد الراتب بنجاح"}
+
+@api_router.get("/employees/{employee_id}/salary-info")
+async def get_employee_salary_info(employee_id: str, current_user: dict = Depends(get_current_user)):
+    """الحصول على معلومات راتب الموظف الكاملة"""
+    if current_user["system"] != "tasks":
+        raise HTTPException(status_code=403, detail="هذا النظام مخصص للمهام فقط")
+    
+    # الموظف يمكنه رؤية راتبه فقط، المدير يمكنه رؤية الكل
+    if current_user["role"] != "admin" and current_user["id"] != employee_id:
+        raise HTTPException(status_code=403, detail="يمكنك رؤية راتبك فقط")
+    
+    employee = await db.users.find_one({"id": employee_id}, {"_id": 0, "password": 0})
+    if not employee:
+        raise HTTPException(status_code=404, detail="الموظف غير موجود")
+    
+    # جلب السلف غير المدفوعة
+    current_month = datetime.now(timezone.utc).strftime('%Y-%m')
+    unpaid_loans = await db.employee_loans.find({
+        "employee_id": employee_id,
+        "is_paid": False
+    }, {"_id": 0}).to_list(1000)
+    
+    # جلب الخصومات والزيادات للشهر الحالي
+    adjustments = await db.adjustments.find({
+        "employee_id": employee_id,
+        "date": {"$regex": f"^{current_month}"}
+    }, {"_id": 0}).to_list(1000)
+    
+    # حساب الإجماليات
+    total_loans = sum(loan["amount"] for loan in unpaid_loans)
+    total_deductions = sum(adj["amount"] for adj in adjustments if adj["adjustment_type"] == "deduction")
+    total_bonuses = sum(adj["amount"] for adj in adjustments if adj["adjustment_type"] == "bonus")
+    
+    base_salary = employee.get("base_salary", 0)
+    final_salary = base_salary - total_deductions + total_bonuses - total_loans
+    
+    return {
+        "employee": employee,
+        "base_salary": base_salary,
+        "salary_day": employee.get("salary_day", 1),
+        "total_loans": total_loans,
+        "total_deductions": total_deductions,
+        "total_bonuses": total_bonuses,
+        "final_salary": max(0, final_salary),
+        "unpaid_loans": unpaid_loans,
+        "current_month_adjustments": adjustments
+    }
+
+# ============== LOANS SYSTEM (نظام السلف) ==============
+
+@api_router.post("/loans")
+async def create_loan(loan_data: LoanCreate, current_user: dict = Depends(get_current_user)):
+    """إضافة سلفة للموظف"""
+    if current_user["system"] != "tasks" or current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="الصلاحية للمدير فقط")
+    
+    employee = await db.users.find_one({"id": loan_data.employee_id})
+    if not employee:
+        raise HTTPException(status_code=404, detail="الموظف غير موجود")
+    
+    loan_id = str(uuid.uuid4())
+    loan_doc = {
+        "id": loan_id,
+        "employee_id": loan_data.employee_id,
+        "employee_name": employee["name"],
+        "amount": loan_data.amount,
+        "reason": loan_data.reason,
+        "loan_date": datetime.now(timezone.utc).strftime('%Y-%m-%d'),
+        "is_paid": False,
+        "paid_date": None,
+        "created_by": current_user["id"],
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    
+    await db.employee_loans.insert_one(loan_doc)
+    
+    # إرسال إشعار للموظف
+    if employee.get("telegram_chat_id"):
+        message = f"""
+💰 <b>تم تسجيل سلفة</b>
+
+💵 <b>المبلغ:</b> {loan_data.amount:,.0f} دينار
+📝 <b>السبب:</b> {loan_data.reason}
+📅 <b>التاريخ:</b> {datetime.now().strftime('%Y-%m-%d')}
+
+⚠️ سيتم خصم هذا المبلغ من راتبك القادم
+        """
+        await send_telegram_message(employee["telegram_chat_id"], message)
+    
+    # إشعار في قاعدة البيانات
+    notification_doc = {
+        "id": str(uuid.uuid4()),
+        "user_id": loan_data.employee_id,
+        "type": "loan",
+        "message": f"تم تسجيل سلفة: {loan_data.amount:,.0f} دينار - {loan_data.reason}",
+        "read": False,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    await db.notifications.insert_one(notification_doc)
+    
+    return {"message": "تم إضافة السلفة بنجاح", "id": loan_id}
+
+@api_router.get("/loans/employee/{employee_id}")
+async def get_employee_loans(employee_id: str, current_user: dict = Depends(get_current_user)):
+    """الحصول على سلف الموظف"""
+    if current_user["system"] != "tasks":
+        raise HTTPException(status_code=403, detail="هذا النظام مخصص للمهام فقط")
+    
+    if current_user["role"] != "admin" and current_user["id"] != employee_id:
+        raise HTTPException(status_code=403, detail="يمكنك رؤية سلفك فقط")
+    
+    loans = await db.employee_loans.find({"employee_id": employee_id}, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    return loans
+
+@api_router.delete("/loans/{loan_id}")
+async def delete_loan(loan_id: str, current_user: dict = Depends(get_current_user)):
+    """حذف سلفة"""
+    if current_user["system"] != "tasks" or current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="الصلاحية للمدير فقط")
+    
+    await db.employee_loans.delete_one({"id": loan_id})
+    return {"message": "تم حذف السلفة بنجاح"}
+
+# ============== SALARY PAYMENTS (تسليم الرواتب) ==============
+
+@api_router.post("/salary-payments")
+async def create_salary_payment(payment_data: SalaryPaymentCreate, current_user: dict = Depends(get_current_user)):
+    """تسليم راتب موظف"""
+    if current_user["system"] != "tasks" or current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="الصلاحية للمدير فقط")
+    
+    employee = await db.users.find_one({"id": payment_data.employee_id})
+    if not employee:
+        raise HTTPException(status_code=404, detail="الموظف غير موجود")
+    
+    current_month = datetime.now(timezone.utc).strftime('%Y-%m')
+    
+    # التحقق من عدم تسليم الراتب مسبقاً لهذا الشهر
+    existing_payment = await db.salary_payments.find_one({
+        "employee_id": payment_data.employee_id,
+        "payment_month": current_month
+    })
+    if existing_payment:
+        raise HTTPException(status_code=400, detail="تم تسليم راتب هذا الشهر مسبقاً")
+    
+    # جلب السلف غير المدفوعة
+    unpaid_loans = await db.employee_loans.find({
+        "employee_id": payment_data.employee_id,
+        "is_paid": False
+    }).to_list(1000)
+    
+    # جلب الخصومات والزيادات للشهر الحالي
+    adjustments = await db.adjustments.find({
+        "employee_id": payment_data.employee_id,
+        "date": {"$regex": f"^{current_month}"}
+    }).to_list(1000)
+    
+    # حساب الإجماليات
+    total_loans = sum(loan["amount"] for loan in unpaid_loans)
+    total_deductions = sum(adj["amount"] for adj in adjustments if adj["adjustment_type"] == "deduction")
+    total_bonuses = sum(adj["amount"] for adj in adjustments if adj["adjustment_type"] == "bonus")
+    
+    base_salary = employee.get("base_salary", 0)
+    final_salary = base_salary - total_deductions + total_bonuses - total_loans
+    final_salary = max(0, final_salary)
+    
+    payment_id = str(uuid.uuid4())
+    payment_doc = {
+        "id": payment_id,
+        "employee_id": payment_data.employee_id,
+        "employee_name": employee["name"],
+        "base_salary": base_salary,
+        "total_deductions": total_deductions,
+        "total_bonuses": total_bonuses,
+        "total_loans": total_loans,
+        "final_salary": final_salary,
+        "payment_month": current_month,
+        "payment_date": datetime.now(timezone.utc).isoformat(),
+        "notes": payment_data.notes,
+        "created_by": current_user["id"],
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    
+    await db.salary_payments.insert_one(payment_doc)
+    
+    # تحديث السلف كمدفوعة
+    for loan in unpaid_loans:
+        await db.employee_loans.update_one(
+            {"id": loan["id"]},
+            {"$set": {
+                "is_paid": True,
+                "paid_date": datetime.now(timezone.utc).isoformat()
+            }}
+        )
+    
+    # إرسال إشعار للموظف
+    if employee.get("telegram_chat_id"):
+        message = f"""
+💵 <b>تم تسليم راتبك!</b>
+
+👤 <b>الموظف:</b> {employee['name']}
+📅 <b>الشهر:</b> {current_month}
+
+💰 <b>الراتب الأساسي:</b> {base_salary:,.0f} دينار
+➖ <b>الخصومات:</b> {total_deductions:,.0f} دينار
+➕ <b>الزيادات:</b> {total_bonuses:,.0f} دينار
+💸 <b>السلف:</b> {total_loans:,.0f} دينار
+
+✅ <b>الراتب النهائي:</b> {final_salary:,.0f} دينار
+        """
+        await send_telegram_message(employee["telegram_chat_id"], message)
+    
+    return {
+        "message": "تم تسليم الراتب بنجاح",
+        "id": payment_id,
+        "final_salary": final_salary,
+        "details": {
+            "base_salary": base_salary,
+            "total_deductions": total_deductions,
+            "total_bonuses": total_bonuses,
+            "total_loans": total_loans
+        }
+    }
+
+@api_router.get("/salary-payments/employee/{employee_id}")
+async def get_employee_salary_payments(employee_id: str, current_user: dict = Depends(get_current_user)):
+    """سجل رواتب الموظف"""
+    if current_user["system"] != "tasks":
+        raise HTTPException(status_code=403, detail="هذا النظام مخصص للمهام فقط")
+    
+    if current_user["role"] != "admin" and current_user["id"] != employee_id:
+        raise HTTPException(status_code=403, detail="يمكنك رؤية رواتبك فقط")
+    
+    payments = await db.salary_payments.find({"employee_id": employee_id}, {"_id": 0}).sort("payment_date", -1).to_list(1000)
+    return payments
+
+@api_router.get("/salary-payments/all")
+async def get_all_salary_payments(month: Optional[str] = None, current_user: dict = Depends(get_current_user)):
+    """جلب جميع الرواتب (للمدير)"""
+    if current_user["system"] != "tasks" or current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="الصلاحية للمدير فقط")
+    
+    query = {}
+    if month:
+        query["payment_month"] = month
+    
+    payments = await db.salary_payments.find(query, {"_id": 0}).sort("payment_date", -1).to_list(1000)
+    return payments
+
+@api_router.get("/employees/salary-summary")
+async def get_employees_salary_summary(current_user: dict = Depends(get_current_user)):
+    """ملخص رواتب جميع الموظفين للشهر الحالي"""
+    if current_user["system"] != "tasks" or current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="الصلاحية للمدير فقط")
+    
+    current_month = datetime.now(timezone.utc).strftime('%Y-%m')
+    
+    employees = await db.users.find(
+        {"system": "tasks", "role": "employee"},
+        {"_id": 0, "password": 0}
+    ).to_list(1000)
+    
+    summary = []
+    for emp in employees:
+        # جلب السلف غير المدفوعة
+        unpaid_loans = await db.employee_loans.find({
+            "employee_id": emp["id"],
+            "is_paid": False
+        }).to_list(1000)
+        
+        # جلب الخصومات والزيادات
+        adjustments = await db.adjustments.find({
+            "employee_id": emp["id"],
+            "date": {"$regex": f"^{current_month}"}
+        }).to_list(1000)
+        
+        # التحقق من تسليم الراتب
+        payment = await db.salary_payments.find_one({
+            "employee_id": emp["id"],
+            "payment_month": current_month
+        })
+        
+        total_loans = sum(loan["amount"] for loan in unpaid_loans)
+        total_deductions = sum(adj["amount"] for adj in adjustments if adj["adjustment_type"] == "deduction")
+        total_bonuses = sum(adj["amount"] for adj in adjustments if adj["adjustment_type"] == "bonus")
+        
+        base_salary = emp.get("base_salary", 0)
+        final_salary = base_salary - total_deductions + total_bonuses - total_loans
+        
+        summary.append({
+            "employee_id": emp["id"],
+            "employee_name": emp["name"],
+            "base_salary": base_salary,
+            "total_loans": total_loans,
+            "total_deductions": total_deductions,
+            "total_bonuses": total_bonuses,
+            "final_salary": max(0, final_salary),
+            "is_paid": payment is not None,
+            "payment_date": payment["payment_date"] if payment else None
+        })
+    
+    return summary
+
+# ============== SALARY REMINDER BACKGROUND TASK ==============
+
+async def check_salary_reminder():
+    """إرسال تذكير بموعد الراتب"""
+    while True:
+        try:
+            await asyncio.sleep(3600 * 12)  # كل 12 ساعة
+            
+            now = datetime.now(timezone.utc)
+            tomorrow = now + timedelta(days=1)
+            
+            # جلب الموظفين
+            employees = await db.users.find({"system": "tasks", "role": "employee"}).to_list(1000)
+            
+            for emp in employees:
+                salary_day = emp.get("salary_day", 1)
+                
+                # إذا كان غداً موعد الراتب
+                if tomorrow.day == salary_day:
+                    if emp.get("telegram_chat_id"):
+                        message = f"""
+📅 <b>تذكير: غداً موعد استلام الراتب!</b>
+
+👤 <b>الموظف:</b> {emp['name']}
+💰 <b>الراتب الأساسي:</b> {emp.get('base_salary', 0):,.0f} دينار
+
+يرجى مراجعة المدير لاستلام راتبك.
+                        """
+                        await send_telegram_message(emp["telegram_chat_id"], message)
+                        print(f"✓ Salary reminder sent to {emp['name']}")
+                        
+        except Exception as e:
+            print(f"Error in check_salary_reminder: {e}")
 
 @api_router.get("/debts/customer/{phone}", response_model=List[Debt])
 async def get_customer_debts(phone: str, current_user: dict = Depends(get_current_user)):
