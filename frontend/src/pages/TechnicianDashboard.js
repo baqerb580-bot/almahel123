@@ -55,6 +55,28 @@ const TechnicianDashboard = ({ user, onLogout }) => {
     headers: { Authorization: `Bearer ${localStorage.getItem("token")}` }
   });
 
+  // تحديث بيانات المستخدم من السيرفر (للصلاحيات)
+  const refreshUserData = async () => {
+    try {
+      const response = await axios.get(`${API}/users/me`, getAuthHeaders());
+      const updatedUser = response.data;
+      
+      // تحديث localStorage
+      localStorage.setItem("user", JSON.stringify(updatedUser));
+      
+      // إذا تغيرت الصلاحيات، أعد تحميل الصفحة
+      const currentPermissions = JSON.stringify(user?.permissions || []);
+      const newPermissions = JSON.stringify(updatedUser?.permissions || []);
+      
+      if (currentPermissions !== newPermissions) {
+        toast.info("تم تحديث صلاحياتك - جاري التحديث...");
+        setTimeout(() => window.location.reload(), 1000);
+      }
+    } catch (error) {
+      console.error("Error refreshing user data:", error);
+    }
+  };
+
   const sendLocation = useCallback(async (taskId, position) => {
     try {
       await axios.post(
@@ -91,7 +113,16 @@ const TechnicianDashboard = ({ user, onLogout }) => {
       fetchData();
       fetchActiveSession();
     }, 5000);
-    return () => clearInterval(interval);
+    
+    // تحديث الصلاحيات كل 10 ثواني
+    const permissionInterval = setInterval(() => {
+      refreshUserData();
+    }, 10000);
+    
+    return () => {
+      clearInterval(interval);
+      clearInterval(permissionInterval);
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

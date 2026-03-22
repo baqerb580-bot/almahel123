@@ -560,6 +560,15 @@ async def update_telegram_id(user_id: str, data: TelegramUpdate, current_user: d
 
 
 # User Management (للمدير)
+
+@api_router.get("/users/me")
+async def get_current_user_data(current_user: dict = Depends(get_current_user)):
+    """جلب بيانات المستخدم الحالي (مع الصلاحيات المحدثة)"""
+    user = await db.users.find_one({"id": current_user["id"]}, {"_id": 0, "password": 0})
+    if not user:
+        raise HTTPException(status_code=404, detail="المستخدم غير موجود")
+    return user
+
 @api_router.post("/users", response_model=User)
 async def create_user(user_data: UserCreate, current_user: dict = Depends(get_current_user)):
     if current_user["role"] != "admin":
