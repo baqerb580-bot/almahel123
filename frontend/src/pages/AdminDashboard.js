@@ -102,6 +102,20 @@ const AdminDashboard = ({ user, onLogout }) => {
     headers: { Authorization: `Bearer ${localStorage.getItem("token")}` }
   });
 
+  // Handle API errors including token expiration
+  const handleApiError = (error) => {
+    if (error.response?.status === 401 || error.response?.data?.detail === "Token expired") {
+      toast.error("انتهت صلاحية الجلسة. يرجى تسجيل الدخول مرة أخرى");
+      localStorage.removeItem("token");
+      localStorage.removeItem("user");
+      setTimeout(() => {
+        window.location.reload();
+      }, 1500);
+      return true;
+    }
+    return false;
+  };
+
   useEffect(() => {
     fetchData();
     // Check for new notifications every 5 seconds
@@ -133,6 +147,7 @@ const AdminDashboard = ({ user, onLogout }) => {
       setUnreadCount(unreadRes.data.count);
     } catch (error) {
       console.error("Error fetching data:", error);
+      handleApiError(error);
     }
   };
 
@@ -414,7 +429,9 @@ _نظام إدارة الصيانة_`;
       setNewTechnician({ name: "", username: "", password: "", telegram_chat_id: "", permissions: [] });
       fetchData();
     } catch (error) {
-      toast.error(error.response?.data?.detail || "فشل إضافة الموظف");
+      if (!handleApiError(error)) {
+        toast.error(error.response?.data?.detail || "فشل إضافة الموظف");
+      }
     }
   };
 
@@ -425,7 +442,9 @@ _نظام إدارة الصيانة_`;
         toast.success("✓ تم حذف الموظف بنجاح");
         fetchData();
       } catch (error) {
-        toast.error(error.response?.data?.detail || "فشل حذف الموظف");
+        if (!handleApiError(error)) {
+          toast.error(error.response?.data?.detail || "فشل حذف الموظف");
+        }
       }
     }
   };
