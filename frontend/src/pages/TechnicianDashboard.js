@@ -33,6 +33,18 @@ const TechnicianDashboard = ({ user, onLogout }) => {
   // Adjustments states
   const [showAdjustments, setShowAdjustments] = useState(false);
   const [adjustments, setAdjustments] = useState([]);
+  
+  // Permission-based features states
+  const [showCreateTaskModal, setShowCreateTaskModal] = useState(false);
+  const [showEditTaskModal, setShowEditTaskModal] = useState(false);
+  const [editingTask, setEditingTask] = useState(null);
+  const [newTask, setNewTask] = useState({
+    customer_name: "",
+    customer_phone: "",
+    customer_address: "",
+    issue_description: ""
+  });
+  const [allTasks, setAllTasks] = useState([]); // كل المهام للعرض
 
   // Check if user has permission
   const hasPermission = (permId) => {
@@ -291,6 +303,94 @@ const TechnicianDashboard = ({ user, onLogout }) => {
     }
   };
 
+  // ============== PERMISSION-BASED FUNCTIONS ==============
+  
+  // جلب كل المهام (للموظف اللي عنده صلاحية view_tasks)
+  const fetchAllTasks = async () => {
+    if (!hasPermission('view_tasks')) return;
+    try {
+      const response = await axios.get(`${API}/tasks`, getAuthHeaders());
+      setAllTasks(response.data);
+    } catch (error) {
+      console.error("Error fetching all tasks:", error);
+    }
+  };
+
+  // إنشاء مهمة جديدة
+  const handleCreateTask = async (e) => {
+    e.preventDefault();
+    if (!hasPermission('create_task')) {
+      toast.error("ليس لديك صلاحية إنشاء المهام");
+      return;
+    }
+    
+    try {
+      await axios.post(`${API}/tasks`, {
+        ...newTask,
+        assigned_to: user.id // تعيين المهمة للموظف نفسه
+      }, getAuthHeaders());
+      
+      toast.success("✓ تم إنشاء المهمة بنجاح");
+      setShowCreateTaskModal(false);
+      setNewTask({ customer_name: "", customer_phone: "", customer_address: "", issue_description: "" });
+      fetchData();
+      fetchAllTasks();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "فشل إنشاء المهمة");
+    }
+  };
+
+  // تعديل مهمة
+  const handleUpdateTask = async (e) => {
+    e.preventDefault();
+    if (!hasPermission('edit_task')) {
+      toast.error("ليس لديك صلاحية تعديل المهام");
+      return;
+    }
+    
+    try {
+      await axios.put(`${API}/tasks/${editingTask.id}`, {
+        customer_name: editingTask.customer_name,
+        customer_phone: editingTask.customer_phone,
+        customer_address: editingTask.customer_address,
+        issue_description: editingTask.issue_description
+      }, getAuthHeaders());
+      
+      toast.success("✓ تم تعديل المهمة بنجاح");
+      setShowEditTaskModal(false);
+      setEditingTask(null);
+      fetchData();
+      fetchAllTasks();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "فشل تعديل المهمة");
+    }
+  };
+
+  // حذف مهمة
+  const handleDeleteTask = async (taskId) => {
+    if (!hasPermission('delete_task')) {
+      toast.error("ليس لديك صلاحية حذف المهام");
+      return;
+    }
+    
+    try {
+      await axios.delete(`${API}/tasks/${taskId}`, getAuthHeaders());
+      toast.success("✓ تم حذف المهمة بنجاح");
+      fetchData();
+      fetchAllTasks();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "فشل حذف المهمة");
+    }
+  };
+
+  // جلب كل المهام عند التحميل إذا عنده صلاحية
+  useEffect(() => {
+    if (hasPermission('view_tasks')) {
+      fetchAllTasks();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
+
   const handleAcceptTask = async (task) => {
     // Request location permission with better message
     if (!navigator.geolocation) {
@@ -494,7 +594,29 @@ const TechnicianDashboard = ({ user, onLogout }) => {
               </div>
             )}
           </div>
-          <div className="flex gap-3">
+          <div className="flex gap-3 flex-wrap">
+            {/* زر إنشاء مهمة - يظهر فقط إذا عنده صلاحية */}
+            {hasPermission('create_task') && (
+              <button 
+                onClick={() => setShowCreateTaskModal(true)} 
+                className="bg-gradient-to-r from-green-500 to-emerald-600 text-white px-4 py-2 rounded-lg font-bold hover:shadow-lg transition-all"
+                data-testid="create-task-button"
+              >
+                ➕ إنشاء مهمة جديدة
+              </button>
+            )}
+            
+            {/* زر عرض كل المهام - يظهر فقط إذا عنده صلاحية */}
+            {hasPermission('view_tasks') && (
+              <button 
+                onClick={fetchAllTasks} 
+                className="bg-gradient-to-r from-purple-500 to-indigo-600 text-white px-4 py-2 rounded-lg font-bold hover:shadow-lg transition-all"
+                data-testid="view-all-tasks-button"
+              >
+                📋 عرض كل المهام ({allTasks.length})
+              </button>
+            )}
+            
             {/* Adjustments Button */}
             <button 
               onClick={async () => {
@@ -972,6 +1094,213 @@ const TechnicianDashboard = ({ user, onLogout }) => {
           </a>
         </div>
       </footer>
+
+      {/* ============== CREATE TASK MODAL ============== */}
+      {showCreateTaskModal && hasPermission('create_task') && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-lg w-full shadow-2xl">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-2xl font-bold" style={{ color: '#667eea' }}>➕ إنشاء مهمة جديدة</h2>
+              <button onClick={() => setShowCreateTaskModal(false)} className="text-gray-500 hover:text-gray-700">
+                <X size={24} />
+              </button>
+            </div>
+            
+            <form onSubmit={handleCreateTask} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">اسم الزبون</label>
+                <input
+                  type="text"
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-indigo-500 focus:outline-none"
+                  placeholder="أدخل اسم الزبون"
+                  value={newTask.customer_name}
+                  onChange={(e) => setNewTask({ ...newTask, customer_name: e.target.value })}
+                  required
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">رقم الهاتف</label>
+                <input
+                  type="text"
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-indigo-500 focus:outline-none"
+                  placeholder="07xxxxxxxxx"
+                  value={newTask.customer_phone}
+                  onChange={(e) => setNewTask({ ...newTask, customer_phone: e.target.value })}
+                  required
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">العنوان</label>
+                <input
+                  type="text"
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-indigo-500 focus:outline-none"
+                  placeholder="أدخل العنوان الكامل"
+                  value={newTask.customer_address}
+                  onChange={(e) => setNewTask({ ...newTask, customer_address: e.target.value })}
+                  required
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">وصف العطل</label>
+                <textarea
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-indigo-500 focus:outline-none"
+                  rows="3"
+                  placeholder="اشرح المشكلة..."
+                  value={newTask.issue_description}
+                  onChange={(e) => setNewTask({ ...newTask, issue_description: e.target.value })}
+                  required
+                />
+              </div>
+              
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="submit"
+                  className="flex-1 bg-gradient-to-r from-green-500 to-emerald-600 text-white py-3 rounded-xl font-bold hover:shadow-lg transition-all"
+                >
+                  ✓ إنشاء المهمة
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowCreateTaskModal(false)}
+                  className="flex-1 bg-gray-200 text-gray-700 py-3 rounded-xl font-bold hover:bg-gray-300 transition-all"
+                >
+                  إلغاء
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ============== EDIT TASK MODAL ============== */}
+      {showEditTaskModal && editingTask && hasPermission('edit_task') && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-lg w-full shadow-2xl">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-2xl font-bold" style={{ color: '#667eea' }}>✏️ تعديل المهمة</h2>
+              <button onClick={() => { setShowEditTaskModal(false); setEditingTask(null); }} className="text-gray-500 hover:text-gray-700">
+                <X size={24} />
+              </button>
+            </div>
+            
+            <form onSubmit={handleUpdateTask} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">اسم الزبون</label>
+                <input
+                  type="text"
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-indigo-500 focus:outline-none"
+                  value={editingTask.customer_name}
+                  onChange={(e) => setEditingTask({ ...editingTask, customer_name: e.target.value })}
+                  required
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">رقم الهاتف</label>
+                <input
+                  type="text"
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-indigo-500 focus:outline-none"
+                  value={editingTask.customer_phone}
+                  onChange={(e) => setEditingTask({ ...editingTask, customer_phone: e.target.value })}
+                  required
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">العنوان</label>
+                <input
+                  type="text"
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-indigo-500 focus:outline-none"
+                  value={editingTask.customer_address}
+                  onChange={(e) => setEditingTask({ ...editingTask, customer_address: e.target.value })}
+                  required
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">وصف العطل</label>
+                <textarea
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-indigo-500 focus:outline-none"
+                  rows="3"
+                  value={editingTask.issue_description}
+                  onChange={(e) => setEditingTask({ ...editingTask, issue_description: e.target.value })}
+                  required
+                />
+              </div>
+              
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="submit"
+                  className="flex-1 bg-gradient-to-r from-blue-500 to-indigo-600 text-white py-3 rounded-xl font-bold hover:shadow-lg transition-all"
+                >
+                  ✓ حفظ التعديلات
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setShowEditTaskModal(false); setEditingTask(null); }}
+                  className="flex-1 bg-gray-200 text-gray-700 py-3 rounded-xl font-bold hover:bg-gray-300 transition-all"
+                >
+                  إلغاء
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ============== ALL TASKS VIEW (VIEW_TASKS PERMISSION) ============== */}
+      {hasPermission('view_tasks') && allTasks.length > 0 && (
+        <div className="max-w-7xl mx-auto mb-8 mt-6">
+          <div className="bg-white rounded-2xl p-6 shadow-lg">
+            <h2 className="text-xl font-bold mb-4" style={{ color: '#667eea' }}>📋 كل المهام ({allTasks.length})</h2>
+            <div className="grid gap-4">
+              {allTasks.map((task) => (
+                <div key={task.id} className="bg-gray-50 rounded-xl p-4 border-2 border-gray-200">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <h3 className="font-bold text-lg">{task.customer_name}</h3>
+                      <p className="text-gray-600 text-sm">{task.customer_phone}</p>
+                      <p className="text-gray-500 text-sm">{task.customer_address}</p>
+                      <p className="text-gray-700 mt-1">{task.issue_description}</p>
+                      <span className={`inline-block mt-2 px-3 py-1 rounded-full text-xs font-bold ${
+                        task.status === 'completed' ? 'bg-green-100 text-green-700' :
+                        task.status === 'in_progress' ? 'bg-blue-100 text-blue-700' :
+                        task.status === 'accepted' ? 'bg-purple-100 text-purple-700' :
+                        'bg-yellow-100 text-yellow-700'
+                      }`}>
+                        {task.status === 'completed' ? '✓ مكتملة' :
+                         task.status === 'in_progress' ? '▶ قيد التنفيذ' :
+                         task.status === 'accepted' ? '✓ مقبولة' : '⏳ قيد الانتظار'}
+                      </span>
+                    </div>
+                    <div className="flex gap-2">
+                      {hasPermission('edit_task') && task.status !== 'completed' && (
+                        <button
+                          onClick={() => { setEditingTask(task); setShowEditTaskModal(true); }}
+                          className="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded-lg text-sm font-medium"
+                        >
+                          ✏️ تعديل
+                        </button>
+                      )}
+                      {hasPermission('delete_task') && (
+                        <button
+                          onClick={() => handleDeleteTask(task.id)}
+                          className="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded-lg text-sm font-medium"
+                        >
+                          🗑️ حذف
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
