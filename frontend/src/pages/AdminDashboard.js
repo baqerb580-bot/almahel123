@@ -89,6 +89,11 @@ const AdminDashboard = ({ user, onLogout }) => {
   const [newSalarySetup, setNewSalarySetup] = useState({ base_salary: "", salary_day: 1 });
   const [newLoan, setNewLoan] = useState({ amount: "", reason: "" });
   const [paymentNotes, setPaymentNotes] = useState("");
+  const [showSalaryHistory, setShowSalaryHistory] = useState(false);
+  const [salaryHistory, setSalaryHistory] = useState([]);
+  const [showSetScheduleModal, setShowSetScheduleModal] = useState(false);
+  const [selectedEmpForSchedule, setSelectedEmpForSchedule] = useState(null);
+  const [scheduleData, setScheduleData] = useState({ daily_hours: 8, start_time: "09:00", end_time: "17:00" });
   
   const [newTask, setNewTask] = useState({
     customer_name: "",
@@ -299,11 +304,14 @@ _نظام إدارة الصيانة_`;
   const handleDeleteTask = async (taskId) => {
     if (window.confirm("هل أنت متأكد من حذف هذه المهمة؟")) {
       try {
-        await axios.delete(`${API}/tasks/${taskId}`, getAuthHeaders());
-        toast.success("تم حذف المهمة بنجاح");
+        const response = await axios.delete(`${API}/tasks/${taskId}`, getAuthHeaders());
+        toast.success("✓ تم حذف المهمة بنجاح");
         fetchData();
       } catch (error) {
-        toast.error("فشل حذف المهمة");
+        console.error("Delete task error:", error);
+        if (!handleApiError(error)) {
+          toast.error(error.response?.data?.detail || "فشل حذف المهمة");
+        }
       }
     }
   };
@@ -701,11 +709,43 @@ _نظام إدارة الصيانة_`;
     
     try {
       await axios.delete(`${API}/loans/${loanId}`, getAuthHeaders());
-      toast.success("تم حذف السلفة بنجاح");
+      toast.success("✓ تم حذف السلفة بنجاح");
       fetchEmployeeSalaryInfo(selectedEmpForSalary.id);
       fetchSalarySummary();
     } catch (error) {
-      toast.error("فشل حذف السلفة");
+      console.error("Delete loan error:", error);
+      if (!handleApiError(error)) {
+        toast.error(error.response?.data?.detail || "فشل حذف السلفة");
+      }
+    }
+  };
+
+  // Fetch salary history
+  const fetchSalaryHistory = async () => {
+    try {
+      const response = await axios.get(`${API}/salary-payments/all`, getAuthHeaders());
+      setSalaryHistory(response.data);
+    } catch (error) {
+      console.error("Error fetching salary history:", error);
+    }
+  };
+
+  // Set employee schedule with modal
+  const handleSetSchedule = async (e) => {
+    e.preventDefault();
+    try {
+      await axios.post(`${API}/users/${selectedEmpForSchedule.id}/schedule`, {
+        daily_hours: parseFloat(scheduleData.daily_hours),
+        start_time: scheduleData.start_time,
+        end_time: scheduleData.end_time
+      }, getAuthHeaders());
+      toast.success("✓ تم تحديد وقت العمل بنجاح");
+      setShowSetScheduleModal(false);
+      fetchWorkSessions();
+    } catch (error) {
+      if (!handleApiError(error)) {
+        toast.error("فشل تحديد وقت العمل");
+      }
     }
   };
 
@@ -951,13 +991,23 @@ _نظام إدارة الصيانة_`;
             </div>
 
             {/* Current Month */}
-            <div className="bg-gradient-to-r from-purple-500 to-indigo-600 text-white rounded-xl p-4 mb-6">
+            <div className="bg-gradient-to-r from-purple-500 to-indigo-600 text-white rounded-xl p-4 mb-6 flex justify-between items-center">
               <div className="flex items-center gap-2">
                 <Calendar size={24} />
                 <span className="text-xl font-bold">
                   شهر {new Date().toLocaleDateString('ar-IQ', { month: 'long', year: 'numeric' })}
                 </span>
               </div>
+              <button
+                onClick={() => {
+                  fetchSalaryHistory();
+                  setShowSalaryHistory(true);
+                }}
+                className="bg-white/20 hover:bg-white/30 px-4 py-2 rounded-lg flex items-center gap-2 transition-all"
+              >
+                <FileText size={18} />
+                📜 سجل الرواتب
+              </button>
             </div>
 
             {/* Employees Salary Grid */}
@@ -1079,9 +1129,11 @@ _نظام إدارة الصيانة_`;
                           </div>
                           <button
                             onClick={() => handleDeleteLoan(loan.id)}
-                            className="text-red-500 hover:text-red-700"
+                            className="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded-lg text-sm flex items-center gap-1 transition-all"
+                            data-testid={`delete-loan-${loan.id}`}
                           >
-                            <Trash2 size={18} />
+                            <Trash2 size={14} />
+                            حذف
                           </button>
                         </div>
                       ))}
@@ -1287,6 +1339,91 @@ _نظام إدارة الصيانة_`;
                 إلغاء
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Salary History Modal */}
+      {showSalaryHistory && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" data-testid="salary-history-modal">
+          <div className="card max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-2xl font-bold" style={{ color: '#667eea' }}>
+                📜 سجل الرواتب المُسلّمة
+              </h2>
+              <button onClick={() => setShowSalaryHistory(false)}>
+                <X size={24} />
+              </button>
+            </div>
+            
+            {salaryHistory.length === 0 ? (
+              <div className="text-center py-12 text-gray-500">
+                <Wallet size={64} className="mx-auto mb-4 opacity-30" />
+                <p className="text-xl">لا توجد رواتب مُسلّمة بعد</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-gradient-to-r from-purple-500 to-indigo-600 text-white">
+                    <tr>
+                      <th className="p-3 text-right rounded-tr-lg">الموظف</th>
+                      <th className="p-3 text-right">الشهر</th>
+                      <th className="p-3 text-right">الراتب الأساسي</th>
+                      <th className="p-3 text-right">السلف</th>
+                      <th className="p-3 text-right">الخصومات</th>
+                      <th className="p-3 text-right">الزيادات</th>
+                      <th className="p-3 text-right">الصافي</th>
+                      <th className="p-3 text-right rounded-tl-lg">تاريخ التسليم</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {salaryHistory.map((payment, idx) => (
+                      <tr key={payment.id} className={idx % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
+                        <td className="p-3 font-bold">{payment.employee_name}</td>
+                        <td className="p-3">{payment.payment_month}</td>
+                        <td className="p-3">{payment.base_salary?.toLocaleString() || 0}</td>
+                        <td className="p-3 text-red-600">-{payment.total_loans?.toLocaleString() || 0}</td>
+                        <td className="p-3 text-red-600">-{payment.total_deductions?.toLocaleString() || 0}</td>
+                        <td className="p-3 text-green-600">+{payment.total_bonuses?.toLocaleString() || 0}</td>
+                        <td className="p-3 font-bold text-purple-600">{payment.final_salary?.toLocaleString() || 0}</td>
+                        <td className="p-3 text-sm text-gray-500">
+                          {new Date(payment.payment_date).toLocaleDateString('ar-IQ')}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                
+                {/* Summary */}
+                <div className="mt-6 p-4 bg-gradient-to-r from-purple-100 to-indigo-100 rounded-xl">
+                  <div className="grid grid-cols-3 gap-4 text-center">
+                    <div>
+                      <p className="text-sm text-gray-600">إجمالي الرواتب المُسلّمة</p>
+                      <p className="text-2xl font-bold text-purple-600">
+                        {salaryHistory.reduce((sum, p) => sum + (p.final_salary || 0), 0).toLocaleString()} د.ع
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-gray-600">عدد الرواتب</p>
+                      <p className="text-2xl font-bold text-indigo-600">{salaryHistory.length}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-gray-600">إجمالي السلف المخصومة</p>
+                      <p className="text-2xl font-bold text-red-600">
+                        {salaryHistory.reduce((sum, p) => sum + (p.total_loans || 0), 0).toLocaleString()} د.ع
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+            
+            <button
+              onClick={() => setShowSalaryHistory(false)}
+              className="w-full mt-4 secondary-button"
+            >
+              إغلاق
+            </button>
           </div>
         </div>
       )}
@@ -1503,10 +1640,11 @@ _نظام إدارة الصيانة_`;
                         </button>
                         <button
                           onClick={() => handleDeleteTechnician(tech.id)}
-                          className="text-red-600 hover:text-red-800 text-sm font-medium"
+                          className="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded-lg text-sm font-medium flex items-center gap-1 transition-all"
+                          data-testid={`delete-tech-${tech.id}`}
                         >
-                          <Trash2 size={16} className="inline ml-1" />
-                          حذف
+                          <Trash2 size={14} />
+                          حذف الموظف
                         </button>
                       </div>
                     </div>
@@ -1768,11 +1906,11 @@ _نظام إدارة الصيانة_`;
                 
                 <button
                   onClick={() => handleDeleteTask(task.id)}
-                  className="danger-button"
+                  className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg font-medium flex items-center gap-2 transition-all shadow-sm hover:shadow-md"
                   data-testid={`delete-task-button-${task.id}`}
                 >
-                  <Trash2 className="inline ml-2" size={18} />
-                  حذف
+                  <Trash2 size={18} />
+                  حذف المهمة
                 </button>
               </div>
 
@@ -2112,75 +2250,175 @@ _نظام إدارة الصيانة_`;
 
             <div className="space-y-6">
               {workSessions.map(({ employee, sessions }) => (
-                <div key={employee.id} className="bg-gray-50 rounded-lg p-6 border-2 border-gray-200">
-                  <div className="flex justify-between items-center mb-4">
-                    <div>
-                      <h3 className="text-xl font-bold text-gray-800">{employee.name}</h3>
-                      <p className="text-gray-600">@{employee.username}</p>
+                <div key={employee.id} className="bg-gradient-to-br from-gray-50 to-white rounded-xl p-6 border-2 border-gray-200 shadow-sm">
+                  <div className="flex justify-between items-start mb-4">
+                    <div className="flex items-center gap-4">
+                      <div className="w-14 h-14 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-full flex items-center justify-center text-white text-xl font-bold">
+                        {employee.name?.charAt(0)}
+                      </div>
+                      <div>
+                        <h3 className="text-xl font-bold text-gray-800">{employee.name}</h3>
+                        <p className="text-gray-500 text-sm">@{employee.username}</p>
+                        {employee.daily_hours && (
+                          <div className="flex gap-2 mt-1">
+                            <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full text-xs">
+                              🕐 {employee.start_time || '09:00'} - {employee.end_time || '17:00'}
+                            </span>
+                            <span className="bg-green-100 text-green-700 px-2 py-0.5 rounded-full text-xs">
+                              ⏱️ {employee.daily_hours} ساعة/يوم
+                            </span>
+                          </div>
+                        )}
+                      </div>
                     </div>
                     <div className="flex gap-2">
                       <button
                         onClick={() => {
-                          const dailyHours = prompt("أدخل عدد الساعات المطلوبة يومياً:", "8");
-                          const startTime = prompt("أدخل وقت البداية (مثال: 18:00):", "18:00");
-                          const endTime = prompt("أدخل وقت النهاية (مثال: 00:00):", "00:00");
-                          if (dailyHours && startTime && endTime) {
-                            setEmployeeSchedule(employee.id, parseFloat(dailyHours), startTime, endTime);
-                          }
+                          setSelectedEmpForSchedule(employee);
+                          setScheduleData({
+                            daily_hours: employee.daily_hours || 8,
+                            start_time: employee.start_time || "09:00",
+                            end_time: employee.end_time || "17:00"
+                          });
+                          setShowSetScheduleModal(true);
                         }}
-                        className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-all text-sm"
+                        className="bg-gradient-to-r from-blue-500 to-indigo-600 text-white px-4 py-2 rounded-lg hover:shadow-lg transition-all text-sm flex items-center gap-2"
                       >
-                        ⚙️ تحديد الوقت
+                        <Clock size={16} />
+                        تحديد الوقت
                       </button>
                       <button
                         onClick={() => {
                           setSelectedTechForSalary(employee);
                           setShowSalaryAdjustment(true);
                         }}
-                        className="bg-orange-600 text-white px-4 py-2 rounded-lg hover:bg-orange-700 transition-all text-sm"
+                        className="bg-gradient-to-r from-orange-500 to-amber-600 text-white px-4 py-2 rounded-lg hover:shadow-lg transition-all text-sm flex items-center gap-2"
                       >
-                        💰 خصم/إضافة
+                        <DollarSign size={16} />
+                        خصم/إضافة
                       </button>
                     </div>
                   </div>
 
                   {sessions.length > 0 ? (
-                    <div className="space-y-2">
-                      {sessions.slice(0, 5).map((session, idx) => (
-                        <div key={idx} className="bg-white rounded-lg p-3 flex justify-between items-center">
-                          <div>
-                            <p className="text-sm text-gray-600">
-                              📅 {new Date(session.clock_in).toLocaleDateString('ar-IQ')}
-                            </p>
-                            <p className="text-xs text-gray-500">
-                              🕐 دخول: {new Date(session.clock_in).toLocaleTimeString('ar-IQ')}
-                              {session.clock_out && ` | خروج: ${new Date(session.clock_out).toLocaleTimeString('ar-IQ')}`}
-                            </p>
-                          </div>
-                          <div className="text-right">
-                            <p className="text-sm font-bold">
-                              {session.actual_hours 
-                                ? `${session.actual_hours.toFixed(1)} ساعة` 
-                                : 'نشط الآن'}
-                            </p>
-                            <span className={`text-xs px-2 py-1 rounded-full ${
-                              session.status === 'completed' ? 'bg-green-100 text-green-700' :
-                              session.status === 'late' ? 'bg-red-100 text-red-700' :
-                              'bg-blue-100 text-blue-700'
-                            }`}>
-                              {session.status === 'completed' ? '✓ مكتمل' :
-                               session.status === 'late' ? '⚠ مبكر' : '🔵 نشط'}
-                            </span>
-                          </div>
+                    <div className="grid gap-2">
+                      <div className="grid grid-cols-5 gap-2 text-xs font-bold text-gray-500 px-3 py-2 bg-gray-100 rounded-lg">
+                        <span>التاريخ</span>
+                        <span>وقت الدخول</span>
+                        <span>وقت الخروج</span>
+                        <span>المدة</span>
+                        <span>الحالة</span>
+                      </div>
+                      {sessions.slice(0, 7).map((session, idx) => (
+                        <div key={idx} className="grid grid-cols-5 gap-2 items-center bg-white rounded-lg p-3 border border-gray-100 hover:shadow-sm transition-all">
+                          <span className="text-sm font-medium">
+                            📅 {new Date(session.clock_in).toLocaleDateString('ar-IQ')}
+                          </span>
+                          <span className="text-sm text-green-600">
+                            🟢 {new Date(session.clock_in).toLocaleTimeString('ar-IQ', { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                          <span className="text-sm text-red-600">
+                            {session.clock_out 
+                              ? `🔴 ${new Date(session.clock_out).toLocaleTimeString('ar-IQ', { hour: '2-digit', minute: '2-digit' })}` 
+                              : '---'}
+                          </span>
+                          <span className="text-sm font-bold">
+                            {session.actual_hours 
+                              ? `${session.actual_hours.toFixed(1)} ساعة` 
+                              : '⏳ نشط'}
+                          </span>
+                          <span className={`text-xs px-3 py-1 rounded-full text-center ${
+                            session.status === 'completed' ? 'bg-green-100 text-green-700' :
+                            session.status === 'late' ? 'bg-red-100 text-red-700' :
+                            'bg-blue-100 text-blue-700'
+                          }`}>
+                            {session.status === 'completed' ? '✓ مكتمل' :
+                             session.status === 'late' ? '⚠ مبكر' : '🔵 نشط'}
+                          </span>
                         </div>
                       ))}
                     </div>
                   ) : (
-                    <p className="text-gray-500 text-center py-4">لا يوجد سجل حضور</p>
+                    <div className="text-center py-8 text-gray-400">
+                      <Clock size={48} className="mx-auto mb-2 opacity-30" />
+                      <p>لا يوجد سجل حضور</p>
+                    </div>
                   )}
                 </div>
               ))}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Set Schedule Modal */}
+      {showSetScheduleModal && selectedEmpForSchedule && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" data-testid="set-schedule-modal">
+          <div className="card max-w-md w-full">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-xl font-bold" style={{ color: '#667eea' }}>
+                <Clock className="inline ml-2" size={24} />
+                تحديد وقت العمل: {selectedEmpForSchedule.name}
+              </h2>
+              <button onClick={() => setShowSetScheduleModal(false)}>
+                <X size={24} />
+              </button>
+            </div>
+            
+            <form onSubmit={handleSetSchedule} className="space-y-4">
+              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-4 rounded-xl">
+                <label className="label text-blue-700">عدد الساعات المطلوبة يومياً</label>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="number"
+                    className="input-field text-center text-2xl font-bold"
+                    min="1"
+                    max="24"
+                    value={scheduleData.daily_hours}
+                    onChange={(e) => setScheduleData({ ...scheduleData, daily_hours: e.target.value })}
+                    required
+                  />
+                  <span className="text-lg text-gray-600">ساعة</span>
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-green-50 p-4 rounded-xl">
+                  <label className="label text-green-700">🟢 وقت البداية</label>
+                  <input
+                    type="time"
+                    className="input-field text-center text-xl font-bold"
+                    value={scheduleData.start_time}
+                    onChange={(e) => setScheduleData({ ...scheduleData, start_time: e.target.value })}
+                    required
+                  />
+                </div>
+                <div className="bg-red-50 p-4 rounded-xl">
+                  <label className="label text-red-700">🔴 وقت النهاية</label>
+                  <input
+                    type="time"
+                    className="input-field text-center text-xl font-bold"
+                    value={scheduleData.end_time}
+                    onChange={(e) => setScheduleData({ ...scheduleData, end_time: e.target.value })}
+                    required
+                  />
+                </div>
+              </div>
+              
+              <div className="bg-gray-100 p-3 rounded-lg text-center text-sm text-gray-600">
+                <Clock className="inline ml-1" size={16} />
+                مثال: من الساعة {scheduleData.start_time} إلى {scheduleData.end_time} ({scheduleData.daily_hours} ساعات)
+              </div>
+              
+              <div className="flex gap-3">
+                <button type="submit" className="success-button flex-1">
+                  ✓ حفظ الوقت
+                </button>
+                <button type="button" onClick={() => setShowSetScheduleModal(false)} className="secondary-button flex-1">
+                  إلغاء
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
