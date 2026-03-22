@@ -34,6 +34,11 @@ const TechnicianDashboard = ({ user, onLogout }) => {
   const [showAdjustments, setShowAdjustments] = useState(false);
   const [adjustments, setAdjustments] = useState([]);
 
+  // Check if user has permission
+  const hasPermission = (permId) => {
+    return user?.permissions?.includes(permId) || false;
+  };
+
   const getAuthHeaders = () => ({
     headers: { Authorization: `Bearer ${localStorage.getItem("token")}` }
   });

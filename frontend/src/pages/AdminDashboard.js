@@ -470,6 +470,45 @@ _نظام إدارة الصيانة_`;
     }
   };
 
+  // ============== PERMISSIONS FUNCTIONS ==============
+  const handleUpdatePermissions = async (techId, permissions) => {
+    try {
+      await axios.put(`${API}/users/${techId}`, {
+        permissions: permissions
+      }, getAuthHeaders());
+      toast.success("✓ تم تحديث الصلاحيات بنجاح");
+      fetchData();
+    } catch (error) {
+      if (!handleApiError(error)) {
+        toast.error("فشل تحديث الصلاحيات");
+      }
+    }
+  };
+
+  const togglePermission = (permId) => {
+    if (!selectedTechForPermissions) return;
+    
+    const currentPermissions = selectedTechForPermissions.permissions || [];
+    let newPermissions;
+    
+    if (currentPermissions.includes(permId)) {
+      newPermissions = currentPermissions.filter(p => p !== permId);
+    } else {
+      newPermissions = [...currentPermissions, permId];
+    }
+    
+    setSelectedTechForPermissions({
+      ...selectedTechForPermissions,
+      permissions: newPermissions
+    });
+  };
+
+  const savePermissions = async () => {
+    await handleUpdatePermissions(selectedTechForPermissions.id, selectedTechForPermissions.permissions || []);
+    setShowEditPermissions(false);
+    setSelectedTechForPermissions(null);
+  };
+
   const fetchWorkSessions = async () => {
     try {
       const sessions = await Promise.all(
@@ -1601,8 +1640,20 @@ _نظام إدارة الصيانة_`;
                     <div className="flex items-center justify-between pt-3 border-t border-gray-200">
                       <div className="text-xs text-gray-500">
                         <p>انضم: {new Date(tech.created_at).toLocaleDateString('ar-IQ')}</p>
+                        {tech.permissions?.length > 0 && (
+                          <p className="text-green-600 mt-1">✓ {tech.permissions.length} صلاحيات</p>
+                        )}
                       </div>
                       <div className="flex gap-2 flex-wrap">
+                        <button
+                          onClick={() => {
+                            setSelectedTechForPermissions({...tech});
+                            setShowEditPermissions(true);
+                          }}
+                          className="bg-indigo-500 hover:bg-indigo-600 text-white px-3 py-1 rounded-lg text-sm font-medium transition-all"
+                        >
+                          🔑 الصلاحيات
+                        </button>
                         <button
                           onClick={async () => {
                             const sessions = await axios.get(`${API}/work-sessions/employee/${tech.id}`, getAuthHeaders());
@@ -1646,6 +1697,62 @@ _نظام إدارة الصيانة_`;
                 ))}
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Edit Permissions Modal */}
+      {showEditPermissions && selectedTechForPermissions && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" data-testid="edit-permissions-modal">
+          <div className="card max-w-md w-full">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-xl font-bold" style={{ color: '#667eea' }}>
+                🔑 صلاحيات: {selectedTechForPermissions.name}
+              </h2>
+              <button onClick={() => { setShowEditPermissions(false); setSelectedTechForPermissions(null); }}>
+                <X size={24} />
+              </button>
+            </div>
+            
+            <div className="space-y-3 mb-6">
+              {TASK_PERMISSIONS.map((perm) => (
+                <label 
+                  key={perm.id} 
+                  className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-all ${
+                    (selectedTechForPermissions.permissions || []).includes(perm.id)
+                      ? 'bg-green-100 border-2 border-green-500'
+                      : 'bg-gray-50 border-2 border-gray-200 hover:bg-gray-100'
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={(selectedTechForPermissions.permissions || []).includes(perm.id)}
+                    onChange={() => togglePermission(perm.id)}
+                    className="w-5 h-5 accent-green-500"
+                  />
+                  <span className="font-medium">{perm.name}</span>
+                  {(selectedTechForPermissions.permissions || []).includes(perm.id) && (
+                    <span className="mr-auto text-green-600">✓</span>
+                  )}
+                </label>
+              ))}
+            </div>
+            
+            <div className="bg-blue-50 p-3 rounded-lg mb-4 text-sm text-blue-700">
+              <p>💡 الصلاحيات المحددة: <strong>{(selectedTechForPermissions.permissions || []).length}</strong> من {TASK_PERMISSIONS.length}</p>
+            </div>
+            
+            <div className="flex gap-3">
+              <button onClick={savePermissions} className="success-button flex-1">
+                ✓ حفظ الصلاحيات
+              </button>
+              <button 
+                onClick={() => { setShowEditPermissions(false); setSelectedTechForPermissions(null); }} 
+                className="secondary-button flex-1"
+              >
+                إلغاء
+              </button>
+            </div>
           </div>
         </div>
       )}
