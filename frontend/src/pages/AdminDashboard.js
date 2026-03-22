@@ -302,16 +302,14 @@ _نظام إدارة الصيانة_`;
   };
 
   const handleDeleteTask = async (taskId) => {
-    if (window.confirm("هل أنت متأكد من حذف هذه المهمة؟")) {
-      try {
-        const response = await axios.delete(`${API}/tasks/${taskId}`, getAuthHeaders());
-        toast.success("✓ تم حذف المهمة بنجاح");
-        fetchData();
-      } catch (error) {
-        console.error("Delete task error:", error);
-        if (!handleApiError(error)) {
-          toast.error(error.response?.data?.detail || "فشل حذف المهمة");
-        }
+    try {
+      await axios.delete(`${API}/tasks/${taskId}`, getAuthHeaders());
+      toast.success("✓ تم حذف المهمة بنجاح");
+      fetchData();
+    } catch (error) {
+      console.error("Delete task error:", error);
+      if (!handleApiError(error)) {
+        toast.error(error.response?.data?.detail || "فشل حذف المهمة");
       }
     }
   };
@@ -444,15 +442,13 @@ _نظام إدارة الصيانة_`;
   };
 
   const handleDeleteTechnician = async (techId) => {
-    if (window.confirm("هل أنت متأكد من حذف هذا الموظف؟")) {
-      try {
-        await axios.delete(`${API}/users/${techId}`, getAuthHeaders());
-        toast.success("✓ تم حذف الموظف بنجاح");
-        fetchData();
-      } catch (error) {
-        if (!handleApiError(error)) {
-          toast.error(error.response?.data?.detail || "فشل حذف الموظف");
-        }
+    try {
+      await axios.delete(`${API}/users/${techId}`, getAuthHeaders());
+      toast.success("✓ تم حذف الموظف بنجاح");
+      fetchData();
+    } catch (error) {
+      if (!handleApiError(error)) {
+        toast.error(error.response?.data?.detail || "فشل حذف الموظف");
       }
     }
   };
@@ -705,8 +701,6 @@ _نظام إدارة الصيانة_`;
   };
 
   const handleDeleteLoan = async (loanId) => {
-    if (!window.confirm("هل أنت متأكد من حذف هذه السلفة؟")) return;
-    
     try {
       await axios.delete(`${API}/loans/${loanId}`, getAuthHeaders());
       toast.success("✓ تم حذف السلفة بنجاح");
