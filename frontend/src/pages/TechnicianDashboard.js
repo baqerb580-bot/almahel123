@@ -473,6 +473,26 @@ const TechnicianDashboard = ({ user, onLogout }) => {
           <div>
             <h1 className="text-4xl font-bold mb-2" style={{ color: '#667eea' }}>لوحة موظف الصيانة</h1>
             <p className="text-gray-600">مرحباً، {user.name}</p>
+            {/* عرض الصلاحيات */}
+            {user.permissions && user.permissions.length > 0 && (
+              <div className="flex gap-2 mt-2 flex-wrap">
+                {user.permissions.includes('create_task') && (
+                  <span className="bg-green-100 text-green-700 px-2 py-1 rounded-full text-xs font-medium">✓ إنشاء مهمة</span>
+                )}
+                {user.permissions.includes('edit_task') && (
+                  <span className="bg-blue-100 text-blue-700 px-2 py-1 rounded-full text-xs font-medium">✓ تعديل مهمة</span>
+                )}
+                {user.permissions.includes('delete_task') && (
+                  <span className="bg-red-100 text-red-700 px-2 py-1 rounded-full text-xs font-medium">✓ حذف مهمة</span>
+                )}
+                {user.permissions.includes('view_tasks') && (
+                  <span className="bg-purple-100 text-purple-700 px-2 py-1 rounded-full text-xs font-medium">✓ عرض المهام</span>
+                )}
+                {user.permissions.includes('assign_tasks') && (
+                  <span className="bg-orange-100 text-orange-700 px-2 py-1 rounded-full text-xs font-medium">✓ تعيين المهام</span>
+                )}
+              </div>
+            )}
           </div>
           <div className="flex gap-3">
             {/* Adjustments Button */}
